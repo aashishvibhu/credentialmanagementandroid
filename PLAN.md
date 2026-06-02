@@ -174,44 +174,36 @@ File: `data/vault/VaultSerializer.kt`
 
 ### 4.1 Room entity
 File: `data/local/CredentialEntity.kt`
-```kotlin
-@Entity(tableName = "credentials")
-data class CredentialEntity(
-    @PrimaryKey val id: String,
-    val encryptedBlob: String,   // JSON of one Credential, AES-GCM encrypted
-    val updatedAt: Long,
-    val isDirty: Boolean         // true = not yet uploaded to Drive
-)
-```
-- [ ] Create entity above
+- [x] `CredentialEntity` — `@PrimaryKey id`, `encryptedBlob`, `updatedAt`, `isDirty`
 
 ### 4.2 DAO
 File: `data/local/CredentialDao.kt`
-- [ ] `getAll(): Flow<List<CredentialEntity>>`
-- [ ] `getById(id: String): CredentialEntity?`
-- [ ] `getDirty(): List<CredentialEntity>`
-- [ ] `upsert(entity: CredentialEntity)`
-- [ ] `delete(id: String)`
-- [ ] `markAllClean()` — sets `isDirty = false` after successful upload
+- [x] `getAll(): Flow<List<CredentialEntity>>` — ordered by `updatedAt DESC`
+- [x] `getAllSuspend(): List<CredentialEntity>` — one-shot snapshot for SyncManager
+- [x] `getById(id)`, `getDirty()`, `upsert()`, `upsertAll()`, `delete()`, `deleteAll()`, `markAllClean()`
 
 ### 4.3 Database
 File: `data/local/CredentialDatabase.kt`
-- [ ] `@Database(entities = [CredentialEntity::class], version = 1)`
-- [ ] Abstract class extending `RoomDatabase`
-- [ ] Expose `credentialDao(): CredentialDao`
+- [x] `@Database(version = 1, exportSchema = false)`, `CredentialDatabase : RoomDatabase`
 
 ### 4.4 Hilt module
 File: `di/DatabaseModule.kt`
-- [ ] `@Provides @Singleton CredentialDatabase` using `Room.databaseBuilder`
-- [ ] `@Provides CredentialDao` from database instance
+- [x] `@Provides @Singleton CredentialDatabase` via `Room.databaseBuilder("credential_db")`
+- [x] `@Provides CredentialDao` from database
 
 ### 4.5 Local repository
 File: `data/local/LocalCredentialRepository.kt`
-- [ ] `getAll(): Flow<List<Credential>>` — decrypt each entity blob, map to domain model
-- [ ] `save(credential: Credential, isDirty: Boolean = true)` — encrypt blob, upsert
-- [ ] `delete(id: String)`
-- [ ] `getDirtyIds(): List<String>`
-- [ ] `markAllClean()`
+- [x] `getAll(): Flow<List<Credential>>` — decrypts blobs; corrupted entries silently dropped
+- [x] `getAllSnapshot(): List<Credential>` — one-shot for sync vault build
+- [x] `save(credential, isDirty = true)` — encrypts and upserts
+- [x] `replaceAll(credentials, isDirty = false)` — atomic delete+insert for Drive download
+- [x] `delete(id)`, `getDirty()`, `hasDirtyEntries()`, `markAllClean()`
+- [x] `VaultSerializer` extended with `serializeOne()` / `deserializeOne()` for per-entity encryption
+
+### Tests
+- [x] `CredentialDaoTest` (instrumented, in-memory Room) — 9 cases covering upsert, update, ordering, dirty flag, markAllClean, delete, deleteAll
+- [x] `LocalCredentialRepositoryTest` (JUnit + MockK) — 8 cases covering decrypt mapping, corrupted entity drop, save/dirty flag, delete, replaceAll
+- [x] `./gradlew test` → BUILD SUCCESSFUL
 
 **Phase 4 complete when:** credentials can be saved and retrieved locally without Drive, surviving app restarts.
 

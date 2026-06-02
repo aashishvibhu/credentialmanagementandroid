@@ -24,6 +24,7 @@ biometric                 = "1.2.0-alpha05"
 coroutines                = "1.9.0"
 kotlinxSerialization      = "1.7.3"
 mockk                     = "1.13.12"
+coroutinesTest            = "1.9.0"
 material              = "1.14.0"
 
 [libraries]
@@ -80,7 +81,9 @@ kotlinx-serialization-json       = { group = "org.jetbrains.kotlinx", name = "ko
 junit                  = { group = "junit",                  name = "junit",          version.ref = "junit" }
 androidx-junit         = { group = "androidx.test.ext",      name = "junit",          version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core",  version.ref = "espressoCore" }
-mockk                  = { group = "io.mockk",               name = "mockk",          version.ref = "mockk" }
+mockk                        = { group = "io.mockk",                  name = "mockk",                        version.ref = "mockk" }
+kotlinx-coroutines-test      = { group = "org.jetbrains.kotlinx",  name = "kotlinx-coroutines-test",      version.ref = "coroutinesTest" }
+room-testing                 = { group = "androidx.room",           name = "room-testing",                 version.ref = "room" }
 
 [plugins]
 android-application      = { id = "com.android.application",                    version.ref = "agp" }

@@ -19,4 +19,10 @@ class VaultSerializer @Inject constructor() {
 
     fun deserialize(jsonString: String): List<Credential> =
         json.decodeFromString(ListSerializer(Credential.serializer()), jsonString)
+
+    fun serializeOne(credential: Credential): String =
+        json.encodeToString(Credential.serializer(), credential)
+
+    fun deserializeOne(jsonString: String): Credential =
+        json.decodeFromString(Credential.serializer(), jsonString)
 }
