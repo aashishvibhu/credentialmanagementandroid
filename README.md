@@ -16,13 +16,6 @@ An Android app for securely storing and managing credentials, with end-to-end AE
 
 ---
 
-## Screenshots
-
-| Sign In | Credential List | Add Credential | Settings |
-|---|---|---|---|
-| *(Sign-in screen)* | *(List with search)* | *(Add/edit form)* | *(Settings screen)* |
-
----
 
 ## Architecture
 
