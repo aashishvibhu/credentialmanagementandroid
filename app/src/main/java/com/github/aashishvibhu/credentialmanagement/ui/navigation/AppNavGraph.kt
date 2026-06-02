@@ -12,12 +12,14 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.github.aashishvibhu.credentialmanagement.data.auth.AuthState
 import com.github.aashishvibhu.credentialmanagement.ui.auth.AuthViewModel
 import com.github.aashishvibhu.credentialmanagement.ui.auth.SignInScreen
 import com.github.aashishvibhu.credentialmanagement.ui.biometric.BiometricLockScreen
+import com.github.aashishvibhu.credentialmanagement.ui.biometric.LockViewModel
 import com.github.aashishvibhu.credentialmanagement.ui.credentialdetail.CredentialDetailScreen
 import com.github.aashishvibhu.credentialmanagement.ui.credentiallist.CredentialListScreen
 import com.github.aashishvibhu.credentialmanagement.ui.settings.SettingsScreen
@@ -50,6 +52,25 @@ fun AppNavGraph(
             }
         }
         prevAuthState = authState
+    }
+
+    // Re-lock: when the vault locks (background timeout) while signed in, redirect to the
+    // biometric screen. The full back stack is cleared so no protected screen lingers behind it.
+    val lockViewModel: LockViewModel = hiltViewModel()
+    val isLocked by lockViewModel.isLocked.collectAsState()
+    val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+    LaunchedEffect(isLocked, currentRoute, authState) {
+        if (isLocked &&
+            authState is AuthState.SignedIn &&
+            currentRoute != null &&
+            currentRoute != Routes.SIGN_IN &&
+            currentRoute != Routes.BIOMETRIC_LOCK
+        ) {
+            navController.navigate(Routes.BIOMETRIC_LOCK) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
     }
 
     NavHost(

@@ -11,6 +11,7 @@ import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
 import com.github.aashishvibhu.credentialmanagement.sync.SyncManager
 import com.github.aashishvibhu.credentialmanagement.sync.SyncScheduler
 import com.github.aashishvibhu.credentialmanagement.sync.SyncState
+import com.github.aashishvibhu.credentialmanagement.ui.biometric.LockStateManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,8 @@ import javax.inject.Inject
 class CredentialListViewModel @Inject constructor(
     private val localRepo: LocalCredentialRepository,
     private val syncManager: SyncManager,
-    private val syncScheduler: SyncScheduler
+    private val syncScheduler: SyncScheduler,
+    private val lockStateManager: LockStateManager
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -33,16 +35,23 @@ class CredentialListViewModel @Inject constructor(
 
     val syncState: StateFlow<SyncState> = syncManager.syncState
 
-    val credentials: StateFlow<List<Credential>> = localRepo.getAll()
-        .combine(_searchQuery) { list, query ->
-            if (query.isBlank()) list
-            else list.filter { c ->
+    // Gated on the lock state: while locked, the decrypted list is wiped from memory
+    // (emits emptyList). On unlock the upstream Room flow re-emits and refills it.
+    val credentials: StateFlow<List<Credential>> = combine(
+        localRepo.getAll(),
+        _searchQuery,
+        lockStateManager.isLocked
+    ) { list, query, locked ->
+        when {
+            locked -> emptyList()
+            query.isBlank() -> list
+            else -> list.filter { c ->
                 c.title.contains(query, ignoreCase = true) ||
                 c.username.contains(query, ignoreCase = true) ||
                 c.url.contains(query, ignoreCase = true)
             }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var recentlyDeleted: Credential? = null
 

@@ -346,30 +346,32 @@ File: `ui/settings/SettingsScreen.kt`
 
 ### 8.1 Screenshot prevention
 File: `ui/MainActivity.kt`
-- [ ] Add `window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)` in `onCreate`
+- [x] Add `window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)` in `onCreate`
 
 ### 8.2 Biometric lock state
 File: `ui/biometric/LockStateManager.kt`
-- [ ] Track `lastForegroundTime` in `LifecycleObserver`
-- [ ] If `now - lastForegroundTime > 60_000` ms on `onResume` → set locked state
-- [ ] `LockState: StateFlow<Boolean>` consumed by `NavGraph` to redirect to biometric screen
+- [x] `@Singleton LockStateManager` tracks `lastBackgroundedAt`; `MainActivity.onPause/onResume` call `onBackgrounded()`/`onForegrounded()`
+- [x] If `now - lastBackgroundedAt > 60_000` ms on foreground → set `isLocked = true`
+- [x] `isLocked: StateFlow<Boolean>` (via `LockViewModel`) consumed by `AppNavGraph` — redirects to `biometric_lock` while signed in, clearing the back stack
+- [x] `BiometricLockScreen` calls `LockViewModel.unlock()` on successful auth
 
 ### 8.3 Clipboard auto-clear
 File: `ui/credentiallist/CredentialListViewModel.kt`
-- [ ] On copy: `ClipboardManager.setPrimaryClip(...)` then `viewModelScope.launch { delay(30_000); clearClipboard() }`
+- [x] On copy: `ClipboardManager.setPrimaryClip(...)` then `viewModelScope.launch { delay(30_000); clearPrimaryClip() }`
 
 ### 8.4 In-memory wipe on lock
-- [ ] When app locks (biometric screen shown), clear decrypted `List<Credential>` from ViewModel state (set to `emptyList()`)
-- [ ] Re-fetch from Room after biometric success
+- [x] `credentials` flow gated on `LockStateManager.isLocked` — emits `emptyList()` while locked, wiping the decrypted list from memory
+- [x] On unlock, upstream Room flow re-emits and refills the list
 
 ### 8.5 Network security config
 File: `app/src/main/res/xml/network_security_config.xml`
-- [ ] `cleartextTrafficPermitted="false"`
-- [ ] Reference in `AndroidManifest.xml` via `android:networkSecurityConfig`
+- [x] `cleartextTrafficPermitted="false"`
+- [x] Referenced in `AndroidManifest.xml` via `android:networkSecurityConfig`
 
 ### 8.6 ProGuard rules
 File: `app/proguard-rules.pro`
-- [ ] Keep rules for: Gson/kotlinx.serialization models, Google Drive SDK, Hilt, Room
+- [x] Keep rules for: kotlinx.serialization models, Google Drive SDK / google-api-client (Gson + `@Key` fields), Hilt, Room
+- [x] `isMinifyEnabled = true` + `isShrinkResources = true` on release; `assembleRelease` (R8) succeeds
 
 **Phase 8 complete when:** screenshots are blocked, app locks after backgrounding, clipboard self-clears.
 

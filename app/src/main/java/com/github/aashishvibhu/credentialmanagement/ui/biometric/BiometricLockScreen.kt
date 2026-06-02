@@ -31,19 +31,29 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
-fun BiometricLockScreen(onAuthenticated: () -> Unit) {
+fun BiometricLockScreen(
+    onAuthenticated: () -> Unit,
+    viewModel: LockViewModel = hiltViewModel()
+) {
     val context = LocalContext.current
     var showRetry by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+
+    // Clears the lock state (and triggers the in-memory wipe to refill) before navigating.
+    fun authenticated() {
+        viewModel.unlock()
+        onAuthenticated()
+    }
 
     val biometricManager = BiometricManager.from(context)
     val canAuthenticate = biometricManager.canAuthenticate(BIOMETRIC_WEAK or DEVICE_CREDENTIAL)
 
     // Skip biometric if hardware not available (e.g. some emulators)
     if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
-        LaunchedEffect(Unit) { onAuthenticated() }
+        LaunchedEffect(Unit) { authenticated() }
         return
     }
 
@@ -53,7 +63,7 @@ fun BiometricLockScreen(onAuthenticated: () -> Unit) {
 
         val callback = object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                onAuthenticated()
+                authenticated()
             }
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 if (errorCode != BiometricPrompt.ERROR_USER_CANCELED &&

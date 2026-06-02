@@ -172,7 +172,7 @@ See [PLAN.md](PLAN.md) for the full implementation roadmap.
 - [x] Phase 5 — Google Drive repository
 - [x] Phase 6 — Sync engine (WorkManager)
 - [x] Phase 7 — Compose UI (all screens)
-- [ ] Phase 8 — Security hardening (biometric timeout, in-memory wipe)
+- [x] Phase 8 — Security hardening (biometric timeout, in-memory wipe)
 - [ ] Phase 9 — Full test suite
 - [ ] Phase 10 — Release prep (ProGuard, signed AAB)
 
