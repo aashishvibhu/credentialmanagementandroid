@@ -71,8 +71,9 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 androidx-biometric       = { group = "androidx.biometric", name = "biometric",       version.ref = "biometric" }
 
 # Coroutines & Serialization
-kotlinx-coroutines-android  = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android",  version.ref = "coroutines" }
-kotlinx-serialization-json  = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json",  version.ref = "kotlinxSerialization" }
+kotlinx-coroutines-android       = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android",       version.ref = "coroutines" }
+kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutines" }
+kotlinx-serialization-json       = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json",       version.ref = "kotlinxSerialization" }
 
 # Testing
 junit                = { group = "junit",                  name = "junit",          version.ref = "junit" }

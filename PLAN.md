@@ -89,35 +89,43 @@ Dependencies added in `app/build.gradle.kts`:
 ### 2.1 Auth data layer
 Directory: `data/auth/`
 
-- [ ] `GoogleAuthClient.kt` — wraps `GoogleSignInClient`
-  - Configure with scope `DriveScopes.DRIVE_APPDATA`
-  - Expose `signIn()`, `silentSignIn()`, `signOut()`, `getAccount()`
-- [ ] `AuthRepository.kt` — interface
-- [ ] `AuthRepositoryImpl.kt` — injects `GoogleAuthClient`, persists sign-in state in `EncryptedSharedPreferences`
+- [x] `AuthState.kt` — sealed class: Idle | Loading | SignedIn(email) | Error(message)
+- [x] `GoogleAuthClient.kt` — wraps `GoogleSignInClient`; scope `DriveScopes.DRIVE_APPDATA`; `silentSignIn()`, `signOut()`, `hasRequiredScopes()`
+- [x] `AuthRepository.kt` — interface with `authState: StateFlow<AuthState>`
+- [x] `AuthRepositoryImpl.kt` — checks cached account first, falls back to silent refresh; no EncryptedSharedPrefs needed (GoogleSignIn persists itself)
 
 ### 2.2 Hilt module
 File: `di/AuthModule.kt`
-- [ ] `@Provides` `GoogleSignInClient` (singleton)
-- [ ] `@Binds` `AuthRepository` → `AuthRepositoryImpl`
+- [x] `@Provides @Singleton GoogleSignInOptions` — requests email + `DRIVE_APPDATA` scope
+- [x] `@Provides @Singleton GoogleSignInClient`
+- [x] `@Binds @Singleton AuthRepository` → `AuthRepositoryImpl`
+- Note: `GoogleAuthClient` uses `@Inject constructor` so no explicit `@Provides` needed
 
 ### 2.3 ViewModel
 File: `ui/auth/AuthViewModel.kt`
-- [ ] `authState: StateFlow<AuthState>` (Idle | Loading | SignedIn | Error)
-- [ ] `fun signIn(activityResultLauncher)` — launches sign-in intent
-- [ ] `fun handleSignInResult(intent)` — processes result, updates state
-- [ ] `fun silentSignIn()` — called on app start
+- [x] `authState: StateFlow<AuthState>` from repository
+- [x] `silentSignIn()` called in `init` — auto-runs on ViewModel creation
+- [x] `getSignInIntent()` — returns sign-in Intent
+- [x] `handleSignInResult(data)` — processes activity result
+- [x] `signOut()`
 
 ### 2.4 Sign-In Screen
 File: `ui/auth/SignInScreen.kt`
-- [ ] Compose screen with centered Google Sign-In button (Material3 `OutlinedButton`)
-- [ ] Observe `authState`; show loading indicator during sign-in
-- [ ] On `SignedIn` → navigate to `CredentialListScreen`
-- [ ] On `Error` → show `Snackbar` with message
+- [x] Lock icon + app title + subtitle
+- [x] `OutlinedButton` launches sign-in via `rememberLauncherForActivityResult`
+- [x] `CircularProgressIndicator` shown during `Loading` state
+- [x] `LaunchedEffect` navigates to credential list on `SignedIn`
+- [x] Error message shown inline below button
 
-### 2.5 Silent sign-in on relaunch
-File: `ui/MainActivity.kt`
-- [ ] On `onCreate`, call `authViewModel.silentSignIn()`
-- [ ] Route to `SignInScreen` or `CredentialListScreen` based on auth state
+### 2.5 Navigation & MainActivity wiring
+File: `ui/navigation/AppNavGraph.kt`
+- [x] `Routes` object with `SIGN_IN` and `CREDENTIAL_LIST` constants
+- [x] `NavHost` starts at `sign_in`; on sign-in navigates to `credential_list` (popping sign_in)
+- [x] Placeholder `credential_list` composable for Phase 7
+
+File: `MainActivity.kt`
+- [x] Replaced placeholder `Surface` with `AppNavGraph()`
+- [x] Silent sign-in triggers automatically via `AuthViewModel.init`
 
 **Phase 2 complete when:** user can sign in with Google and the account is persisted across restarts.
 
