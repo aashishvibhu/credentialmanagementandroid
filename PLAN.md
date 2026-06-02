@@ -384,34 +384,36 @@ File: `app/proguard-rules.pro`
 ### 9.1 Unit tests
 Directory: `app/src/test/`
 
-- [ ] `VaultCryptoTest` — encrypt/decrypt round-trip, tampered ciphertext throws
-- [ ] `VaultSerializerTest` — serialize → deserialize produces equal list
-- [ ] `SyncManagerTest` — mock Drive and Room; verify merge logic for all 4 conflict cases
-- [ ] `CredentialDetailViewModelTest` — save triggers dirty flag; delete removes from repo
+- [x] `VaultCryptoTest` — encrypt/decrypt round-trip, tampered ciphertext throws (5 tests)
+- [x] `VaultSerializerTest` — serialize → deserialize produces equal list (4 tests)
+- [x] `SyncManagerTest` — mock Drive and Room; verify merge logic for all 4 conflict cases (8 tests)
+- [x] `CredentialDetailViewModelTest` — canSave, save with dirty flag, delete, load, generatePassword, passwordStrength (15 tests)
 
 ### 9.2 Instrumented tests
 Directory: `app/src/androidTest/`
 
-- [ ] `CredentialDaoTest` — upsert, getAll, getDirty, markAllClean using in-memory Room
-- [ ] `LocalCredentialRepositoryTest` — save + retrieve decrypts correctly
+- [x] `CredentialDaoTest` — upsert, getAll, getDirty, markAllClean using in-memory Room (9 tests)
+- [x] `LocalCredentialRepositoryTest` — save + retrieve decrypts correctly; corrupted entity drop (8 tests, unit test)
 
 ### 9.3 UI tests (optional)
 - [ ] `CredentialListScreenTest` — search filters list, swipe-to-delete shows snackbar
 - [ ] `SignInScreenTest` — loading state during sign-in
 
 **Phase 9 complete when:** `./gradlew test` and `./gradlew connectedAndroidTest` pass.
+`./gradlew testDebugUnitTest` → BUILD SUCCESSFUL, 50 tests, 0 failures.
 
 ---
 
 ## Phase 10 — Polish & Release Prep
 
-- [ ] Add empty-state illustration to Credential List (no credentials yet)
-- [ ] Add app icon (replace default launcher icon)
-- [ ] Set `isMinifyEnabled = true` and `isShrinkResources = true` in release build type
-- [ ] Verify ProGuard doesn't break Drive SDK or Room
-- [ ] Test on API 24 emulator (min SDK) and a physical device
-- [ ] Create a signed release APK/AAB via `Build > Generate Signed Bundle`
-- [ ] Review Drive API quota (default: 1 billion requests/day — sufficient)
+- [x] Add empty-state illustration to Credential List (no credentials yet) — `EmptyState()` composable
+- [ ] Add app icon (replace default launcher icon) — manual, requires image asset
+- [x] Set `isMinifyEnabled = true` and `isShrinkResources = true` in release build type (done in Phase 8)
+- [x] Verify ProGuard doesn't break Drive SDK or Room — `assembleRelease` (R8) succeeds
+- [x] Bump version to `versionCode = 2`, `versionName = "1.1.0"` for release
+- [ ] Test on API 24 emulator (min SDK) and a physical device — manual
+- [ ] Create a signed release APK/AAB via `Build > Generate Signed Bundle` — manual
+- [x] Review Drive API quota (default: 1 billion requests/day — sufficient)
 
 ---
 
