@@ -137,49 +137,32 @@ File: `MainActivity.kt`
 
 ### 3.1 Domain model
 File: `domain/model/Credential.kt`
-```kotlin
-data class Credential(
-    val id: String,       // UUID
-    val title: String,
-    val username: String,
-    val password: String,
-    val url: String = "",
-    val notes: String = "",
-    val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
-)
-```
-- [ ] Create the data class above
+- [x] `@Serializable data class Credential` with id (UUID default), title, username, password, url, notes, createdAt, updatedAt
 
 ### 3.2 Android Keystore key management
 File: `security/KeystoreManager.kt`
-- [ ] `getOrCreateKey(alias: String): SecretKey`
-  - Use `KeyGenerator` with `KeyProperties.KEY_ALGORITHM_AES`
-  - `KeyGenParameterSpec` with `ENCRYPT` + `DECRYPT` purposes
-  - 256-bit key size, `BLOCK_MODE_GCM`, `ENCRYPTION_PADDING_NONE`
-  - `setUserAuthenticationRequired(false)` (vault is encrypted separately from biometric)
-- [ ] Key alias constant: `"credential_vault_key"`
+- [x] `getOrCreateKey(): SecretKey` — checks Keystore first, generates if absent
+- [x] AES-256, GCM, NoPadding, `setUserAuthenticationRequired(false)`
+- [x] Key alias: `"credential_vault_key"`
 
 ### 3.3 Vault encryption utility
 File: `security/VaultCrypto.kt`
-- [ ] `encrypt(plaintext: String): String`
-  - Generate random 12-byte IV
-  - Cipher: `AES/GCM/NoPadding`
-  - Return Base64( IV + ciphertext )
-- [ ] `decrypt(encoded: String): String`
-  - Split IV and ciphertext from Base64
-  - Decrypt and return plaintext
+- [x] `encrypt(plaintext)` — random 12-byte IV, AES/GCM/NoPadding, returns Base64(IV + ciphertext + GCM tag)
+- [x] `decrypt(encoded)` — splits IV at byte 12, verifies GCM tag, returns plaintext
+- [x] Uses `kotlin.io.encoding.Base64` (Kotlin stdlib, works in both JVM tests and Android)
 
 ### 3.4 Vault serialization
 File: `data/vault/VaultSerializer.kt`
-- [ ] `serialize(credentials: List<Credential>): String` → JSON string
-- [ ] `deserialize(json: String): List<Credential>` → list
-- [ ] Use `kotlinx.serialization` or `Gson`; add the dependency if missing
+- [x] `serialize(List<Credential>): String` via `kotlinx.serialization` JSON
+- [x] `deserialize(String): List<Credential>` with `ignoreUnknownKeys = true`
 
-### 3.5 Hilt module
-File: `di/SecurityModule.kt`
-- [ ] `@Provides @Singleton KeystoreManager`
-- [ ] `@Provides @Singleton VaultCrypto`
+### 3.5 Hilt wiring
+- [x] No explicit `SecurityModule` needed — `KeystoreManager`, `VaultCrypto`, and `VaultSerializer` all use `@Singleton @Inject constructor` so Hilt injects them directly
+
+### Unit tests
+- [x] `VaultCryptoTest`: round-trip, distinct ciphertexts (random IV), empty string, unicode, tampered ciphertext throws — mocks `KeystoreManager` with a plain JVM AES key
+- [x] `VaultSerializerTest`: full list round-trip, empty list, optional field defaults, unknown keys ignored
+- [x] `./gradlew test` → BUILD SUCCESSFUL, all tests pass
 
 **Phase 3 complete when:** unit tests pass for encrypt → decrypt round-trip with a known plaintext.
 
