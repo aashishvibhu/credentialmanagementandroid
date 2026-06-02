@@ -251,34 +251,36 @@ File: `di/DriveModule.kt`
 
 ### 6.1 Sync logic
 File: `sync/SyncManager.kt`
-```
-Algorithm:
-1. Get remote vault modified time T_remote
-2. Get local max updatedAt T_local
-3. If T_remote > T_local → download remote vault, decrypt, merge into local DB (upsert by id, keep newest updatedAt)
-4. If local has dirty records → encrypt full vault from local DB, upload to Drive
-5. Mark all local records clean
-```
-- [ ] `suspend fun sync()` implementing the above algorithm
-- [ ] Handle `DriveException`, network errors — log and surface to UI via `SyncState`
-- [ ] `syncState: StateFlow<SyncState>` (Idle | Syncing | Success | Error(msg))
+- [x] `SyncState` sealed class: Idle | Syncing | Success | Error(message)
+- [x] `AtomicBoolean` concurrency guard — second call while syncing returns immediately
+- [x] Pull step: if `remoteModifiedMs > localMaxUpdatedAt`, download + decrypt + merge + `replaceAll`
+- [x] Push step: if dirty entries OR no remote vault, encrypt full snapshot + upload + `markAllClean`
+- [x] `merge()` — last-write-wins by `updatedAt` using `groupBy { id }.maxBy { updatedAt }`
+- [x] Exceptions propagate after setting Error state (so SyncWorker can decide retry/fail)
+- [x] `syncState: StateFlow<SyncState>` for UI consumption in Phase 7
 
 ### 6.2 WorkManager worker
 File: `sync/SyncWorker.kt`
-- [ ] `@HiltWorker class SyncWorker` extending `CoroutineWorker`
-- [ ] Calls `syncManager.sync()` in `doWork()`
-- [ ] Returns `Result.success()` or `Result.retry()` on transient network error
+- [x] `@HiltWorker class SyncWorker : CoroutineWorker` with `@AssistedInject`
+- [x] `IllegalStateException` (not signed in) → `Result.failure()`, no retry
+- [x] Other exceptions → `Result.retry()` up to 3 attempts, then `Result.failure()`
 
 ### 6.3 Sync scheduler
 File: `sync/SyncScheduler.kt`
-- [ ] `schedulePeriodicSync()` — `PeriodicWorkRequest` every 15 minutes, network-required constraint
-- [ ] `scheduleImmediateSync()` — `OneTimeWorkRequest` for on-demand sync (e.g., after save)
-- [ ] `cancelSync()`
+- [x] `schedulePeriodicSync()` — 15-min `PeriodicWorkRequest`, CONNECTED constraint, exponential backoff, `KEEP` policy
+- [x] `scheduleImmediateSync()` — `OneTimeWorkRequest`, `REPLACE` policy (cancels pending)
+- [x] `cancelAll()` cancels both periodic and immediate work
 
 ### 6.4 Wire sync triggers
-- [ ] Call `schedulePeriodicSync()` after successful sign-in
-- [ ] Call `scheduleImmediateSync()` after every credential save/delete
-- [ ] Call `scheduleImmediateSync()` in `onResume` of `MainActivity` if signed in
+- [x] `AuthViewModel`: `observeAuthForSync()` — collects authState, schedules periodic + immediate sync on `SignedIn`; `signOut()` calls `cancelAll()` first
+- [x] `MainActivity.onResume()` — schedules immediate sync if signed in
+- [x] Credential save/delete will trigger immediate sync in Phase 7 ViewModels
+- [x] `CredentialApp` now implements `Configuration.Provider` with `HiltWorkerFactory`
+- [x] `AndroidManifest.xml` — removes default `WorkManagerInitializer` via `tools:node="remove"`
+
+### Unit tests
+- [x] `SyncManagerTest` — 8 cases: no remote→upload, dirty→upload, remote newer→pull+merge+reupload, no-op when in sync, merge keeps newer, state Success, state Error, concurrent guard
+- [x] `./gradlew test assembleDebug` → BUILD SUCCESSFUL
 
 **Phase 6 complete when:** editing a credential on the device, killing and relaunching, shows the credential downloaded from Drive.
 
