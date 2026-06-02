@@ -215,34 +215,31 @@ File: `data/local/LocalCredentialRepository.kt`
 
 ### 5.1 Drive service factory
 File: `data/drive/DriveServiceFactory.kt`
-- [ ] `build(account: GoogleSignInAccount): Drive`
-  - Use `GoogleAccountCredential.usingOAuth2(context, listOf(DriveScopes.DRIVE_APPDATA))`
-  - Build `Drive` service with `NetHttpTransport` and `GsonFactory`
+- [x] `build(account: GoogleSignInAccount): Drive` — `GoogleAccountCredential.usingOAuth2()` with `DRIVE_APPDATA` scope, `NetHttpTransport`, `GsonFactory`
 
 ### 5.2 Drive repository interface
 File: `domain/repository/DriveRepository.kt`
-```kotlin
-interface DriveRepository {
-    suspend fun uploadVault(encryptedJson: String)
-    suspend fun downloadVault(): String?           // null if no file exists yet
-    suspend fun getVaultModifiedTime(): Long?      // epoch ms, null if no file
-    suspend fun deleteVault()
-}
-```
-- [ ] Create interface above
+- [x] `uploadVault(encryptedContent)`, `downloadVault(): String?`, `getVaultModifiedTime(): Long?`, `deleteVault()`
 
 ### 5.3 Drive repository implementation
 File: `data/drive/DriveRepositoryImpl.kt`
-- [ ] `uploadVault`: find existing `vault.enc` file ID (list by name in `appDataFolder`); if found, update content; if not, create new file
-- [ ] `downloadVault`: find `vault.enc`, download as `InputStream`, read to string
-- [ ] `getVaultModifiedTime`: get file metadata `modifiedTime` field
-- [ ] `deleteVault`: permanently delete `vault.enc`
-- [ ] All methods use `Dispatchers.IO` via `withContext`
+- [x] Drive service built lazily per-call via `requireDriveService()` — fetches current account from `AuthRepository`, safe across sign-in/sign-out
+- [x] `findVaultFile()` — lists `appDataFolder` filtered by `name='vault.enc' and trashed=false`
+- [x] `uploadVault` — creates new file if absent, patches existing file by ID
+- [x] `downloadVault` — `executeMediaAsInputStream()` decoded as UTF-8
+- [x] `getVaultModifiedTime` — `modifiedTime.value` (epoch ms)
+- [x] `deleteVault` — no-op if file absent, otherwise deletes by ID
+- [x] All operations on `Dispatchers.IO`
 
 ### 5.4 Hilt module
 File: `di/DriveModule.kt`
-- [ ] `@Provides DriveRepository` → `DriveRepositoryImpl`
-- [ ] Inject `DriveServiceFactory` and `GoogleSignInAccount` (or a provider)
+- [x] `@Binds @Singleton DriveRepository` → `DriveRepositoryImpl`
+- Note: `DriveServiceFactory` uses `@Singleton @Inject constructor`, no explicit `@Provides` needed
+
+### Unit tests
+- [x] `DriveRepositoryImplTest` — 9 cases: create vs update branch, download null/content, modifiedTime null/value, delete no-op/deletes, auth guard
+- [x] Added `google-api-client-android:2.7.0` — contains `GoogleAccountCredential` (was missing from deps)
+- [x] `./gradlew test` → BUILD SUCCESSFUL, all tests pass
 
 **Phase 5 complete when:** a test (or debug button) can write a string to Drive and read it back.
 

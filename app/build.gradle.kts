@@ -98,6 +98,7 @@ dependencies {
     // Google Auth & Drive
     implementation(libs.play.services.auth)
     implementation(libs.google.api.services.drive)
+    implementation(libs.google.api.client.android)
     implementation(libs.google.http.client.android)
     implementation(libs.google.auth.library.oauth2.http)
 
