@@ -291,47 +291,50 @@ File: `sync/SyncScheduler.kt`
 **Goal:** Full navigation flow with all screens.
 
 ### 7.1 Navigation graph
-File: `ui/navigation/NavGraph.kt`
-- [ ] Define routes: `sign_in`, `biometric_lock`, `credential_list`, `credential_detail/{id}`, `settings`
-- [ ] `NavHost` with `NavController`
-- [ ] Pass `hiltViewModel()` into each screen composable
+File: `ui/navigation/AppNavGraph.kt`
+- [x] Routes: `sign_in`, `biometric_lock`, `credential_list`, `credential_detail/{credentialId}`, `settings`
+- [x] Shared `AuthViewModel` at NavGraph level — `LaunchedEffect` observes `authState` and navigates to `sign_in` on sign-out (Idle after non-Idle)
+- [x] `Routes` object with helper `credentialDetail(id)` function
 
 ### 7.2 Screen: Credential List
 File: `ui/credentiallist/CredentialListScreen.kt`
-- [ ] `LazyColumn` of credential cards (title, username, favicon placeholder)
-- [ ] `FloatingActionButton` → navigate to `credential_detail/new`
-- [ ] Search bar at top (filters list by title/username/url)
-- [ ] Swipe-to-delete with undo `Snackbar`
-- [ ] Sync status indicator (top bar icon: synced / syncing / error)
-- [ ] Long-press → copy username or password to clipboard (auto-clears in 30 s)
+- [x] `LazyColumn` with `SwipeToDismissBox` (end-to-start swipe deletes)
+- [x] Swipe-to-delete triggers Snackbar with UNDO action; undo re-saves to Room
+- [x] `FloatingActionButton` → `credential_detail/new`
+- [x] `OutlinedTextField` search bar filters by title, username, url
+- [x] `TopAppBar` with sync status icon (Idle/Syncing/Success/Error) + Settings button
+- [x] Long-press `DropdownMenu` → Copy username / Copy password (auto-clears clipboard after 30 s)
 
 ### 7.3 Screen: Credential Detail (Add / Edit)
 File: `ui/credentialdetail/CredentialDetailScreen.kt`
-- [ ] Fields: Title*, Username*, Password* (show/hide toggle), URL, Notes
-- [ ] Password strength indicator (optional, basic regex scoring)
-- [ ] `Generate Password` button → fill field with 16-char random password
-- [ ] Save button → `viewModel.save()` → `scheduleImmediateSync()`
-- [ ] Delete button (only on edit) with confirmation dialog
-- [ ] Validation: title and username required
+- [x] Fields: Title*, Username*, Password* (show/hide toggle + eye icon), URL, Notes
+- [x] `LinearProgressIndicator` password strength bar (Weak/Fair/Strong color-coded)
+- [x] `Generate Password` button (16-char random from alphanumeric + symbols)
+- [x] Save icon in TopAppBar — enabled only when title + username non-blank
+- [x] Delete icon (edit mode only) shows confirmation `AlertDialog` before deleting
+- [x] `navEvent` SharedFlow triggers `onBack()` after save or delete
 
 ### 7.4 Screen: Biometric Lock
 File: `ui/biometric/BiometricLockScreen.kt`
-- [ ] Shown on app cold start and resume after >60 s in background
-- [ ] `BiometricPrompt` shown automatically on screen entry
-- [ ] On success → navigate to `credential_list`
-- [ ] On failure/cancel → show retry button
+- [x] `BiometricManager.canAuthenticate()` check — skips to `onAuthenticated()` on devices without biometric
+- [x] `BiometricPrompt` launched via `LaunchedEffect(Unit)` on screen entry
+- [x] On success → `onAuthenticated()`; on error/cancel → shows "Try Again" button
+- [x] Inline error message for non-user-cancel errors
+- [x] `MainActivity` changed to extend `FragmentActivity` (required by biometric library)
 
 ### 7.5 Screen: Settings
 File: `ui/settings/SettingsScreen.kt`
-- [ ] Last sync time (formatted)
-- [ ] `Sync Now` button → `scheduleImmediateSync()`
-- [ ] `Sign Out` button → clear local DB + EncryptedSharedPrefs + navigate to sign-in
-- [ ] App version display
+- [x] Signed-in email display
+- [x] Sync status + last sync time (formatted "MMM d, HH:mm")
+- [x] `Sync Now` button (disabled while syncing)
+- [x] `Sign Out` button with confirmation dialog; clears local DB then signs out
+- [x] App version from `PackageManager`
 
 ### 7.6 ViewModels
-- [ ] `CredentialListViewModel` — exposes `credentials: StateFlow<List<Credential>>`, `syncState`, search query
-- [ ] `CredentialDetailViewModel` — load by id, `save()`, `delete()`
-- [ ] `SettingsViewModel` — last sync time, sign-out, trigger sync
+- [x] `CredentialListViewModel`: `credentials` Flow filtered by `searchQuery`; `deleteCredential`/`undoDelete` with `recentlyDeleted` buffer; `copyToClipboard` with 30 s auto-clear
+- [x] `CredentialDetailViewModel`: `SavedStateHandle` for nav arg; loads existing by `localRepo.getById()`; `canSave`, `passwordStrength` derived StateFlows; `generatePassword()`; `save()`/`delete()` emit `navEvent`
+- [x] `SettingsViewModel`: `lastSyncTime` tracked by observing `SyncState.Success`; `syncNow()`, `signOut()`
+- [x] `LocalCredentialRepository` extended with `getById(id): Credential?`
 
 **Phase 7 complete when:** all screens are navigable and credentials can be added, viewed, and deleted through the UI.
 

@@ -33,6 +33,8 @@ class LocalCredentialRepository @Inject constructor(
         dao.upsertAll(credentials.map { it.toEntity(isDirty) })
     }
 
+    suspend fun getById(id: String): Credential? = dao.getById(id)?.toCredential()
+
     suspend fun delete(id: String) = dao.delete(id)
 
     suspend fun getDirty(): List<CredentialEntity> = dao.getDirty()
