@@ -5,6 +5,7 @@ import com.github.aashishvibhu.credentialmanagement.data.vault.VaultSerializer
 import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
 import com.github.aashishvibhu.credentialmanagement.domain.repository.DriveRepository
 import com.github.aashishvibhu.credentialmanagement.security.VaultCrypto
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +25,10 @@ class SyncManager @Inject constructor(
 
     private val isSyncing = AtomicBoolean(false)
 
+    companion object {
+        private const val TAG = "SyncManager"
+    }
+
     suspend fun sync() {
         if (!isSyncing.compareAndSet(false, true)) return
         _syncState.value = SyncState.Syncing
@@ -31,6 +36,7 @@ class SyncManager @Inject constructor(
             performSync()
             _syncState.value = SyncState.Success
         } catch (e: Exception) {
+            Log.e(TAG, "sync failed: ${e.javaClass.simpleName} — ${e.message}", e)
             _syncState.value = SyncState.Error(e.message ?: "Sync failed")
             throw e
         } finally {
@@ -65,6 +71,27 @@ class SyncManager @Inject constructor(
                 vaultCrypto.encrypt(vaultSerializer.serialize(snapshot))
             )
             localRepo.markAllClean()
+        }
+    }
+
+    /**
+     * Upload the current local snapshot to Drive immediately, skipping the remote-newer check.
+     * Use after a local write when we know the local state is authoritative.
+     */
+    suspend fun pushNow() {
+        if (!isSyncing.compareAndSet(false, true)) return
+        _syncState.value = SyncState.Syncing
+        try {
+            val snapshot = localRepo.getAllSnapshot()
+            driveRepo.uploadVault(vaultCrypto.encrypt(vaultSerializer.serialize(snapshot)))
+            localRepo.markAllClean()
+            _syncState.value = SyncState.Success
+        } catch (e: Exception) {
+            Log.e(TAG, "pushNow failed: ${e.javaClass.simpleName} — ${e.message}", e)
+            _syncState.value = SyncState.Error(e.message ?: "Upload failed")
+            throw e
+        } finally {
+            isSyncing.set(false)
         }
     }
 

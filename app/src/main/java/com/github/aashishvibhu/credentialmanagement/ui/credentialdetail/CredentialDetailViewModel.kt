@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.aashishvibhu.credentialmanagement.data.local.LocalCredentialRepository
 import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
-import com.github.aashishvibhu.credentialmanagement.sync.SyncScheduler
+import com.github.aashishvibhu.credentialmanagement.sync.SyncManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +23,7 @@ import javax.inject.Inject
 class CredentialDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val localRepo: LocalCredentialRepository,
-    private val syncScheduler: SyncScheduler
+    private val syncManager: SyncManager
 ) : ViewModel() {
 
     val credentialId: String = checkNotNull(savedStateHandle["credentialId"])
@@ -37,6 +37,7 @@ class CredentialDetailViewModel @Inject constructor(
 
     private val _passwordVisible = MutableStateFlow(false)
     private val _isLoading       = MutableStateFlow(!isNew)
+    private val _isSaving        = MutableStateFlow(false)
     private val _navEvent        = MutableSharedFlow<Unit>()
 
     val title:           StateFlow<String>  = _title.asStateFlow()
@@ -46,6 +47,7 @@ class CredentialDetailViewModel @Inject constructor(
     val notes:           StateFlow<String>  = _notes.asStateFlow()
     val passwordVisible: StateFlow<Boolean> = _passwordVisible.asStateFlow()
     val isLoading:       StateFlow<Boolean> = _isLoading.asStateFlow()
+    val isSaving:        StateFlow<Boolean> = _isSaving.asStateFlow()
     val navEvent:        SharedFlow<Unit>   = _navEvent
 
     val canSave: StateFlow<Boolean> = combine(_title, _username) { t, u ->
@@ -86,6 +88,7 @@ class CredentialDetailViewModel @Inject constructor(
     fun save() {
         if (!canSave.value) return
         viewModelScope.launch {
+            _isSaving.value = true
             val now = System.currentTimeMillis()
             val credential = if (isNew) {
                 Credential(
@@ -110,17 +113,20 @@ class CredentialDetailViewModel @Inject constructor(
                 )
             }
             localRepo.save(credential)
-            syncScheduler.scheduleImmediateSync()
+            try { syncManager.pushNow() } catch (_: Exception) { /* credential is dirty; periodic sync will retry */ }
             _navEvent.emit(Unit)
+            _isSaving.value = false
         }
     }
 
     fun delete() {
         if (isNew) return
         viewModelScope.launch {
+            _isSaving.value = true
             localRepo.delete(credentialId)
-            syncScheduler.scheduleImmediateSync()
+            try { syncManager.pushNow() } catch (_: Exception) { /* periodic sync will retry */ }
             _navEvent.emit(Unit)
+            _isSaving.value = false
         }
     }
 

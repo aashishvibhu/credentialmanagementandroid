@@ -3,7 +3,7 @@ package com.github.aashishvibhu.credentialmanagement.ui.credentialdetail
 import androidx.lifecycle.SavedStateHandle
 import com.github.aashishvibhu.credentialmanagement.data.local.LocalCredentialRepository
 import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
-import com.github.aashishvibhu.credentialmanagement.sync.SyncScheduler
+import com.github.aashishvibhu.credentialmanagement.sync.SyncManager
 import io.mockk.coEvery
 import io.mockk.coJustRun
 import io.mockk.coVerify
@@ -26,14 +26,14 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class CredentialDetailViewModelTest {
 
-    private val localRepo     = mockk<LocalCredentialRepository>()
-    private val syncScheduler = mockk<SyncScheduler>()
+    private val localRepo      = mockk<LocalCredentialRepository>()
+    private val syncManager    = mockk<SyncManager>()
     private val testDispatcher = UnconfinedTestDispatcher()
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        coJustRun { syncScheduler.scheduleImmediateSync() }
+        coJustRun { syncManager.pushNow() }
     }
 
     @After
@@ -44,7 +44,7 @@ class CredentialDetailViewModelTest {
     private fun newVm(id: String = "new") = CredentialDetailViewModel(
         SavedStateHandle(mapOf("credentialId" to id)),
         localRepo,
-        syncScheduler
+        syncManager
     )
 
     // ── canSave ───────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ class CredentialDetailViewModelTest {
                 isDirty = true
             )
         }
-        coVerify { syncScheduler.scheduleImmediateSync() }
+        coVerify { syncManager.pushNow() }
         job.cancel()
     }
 
@@ -101,7 +101,7 @@ class CredentialDetailViewModelTest {
         val vm = newVm()
         vm.save()
         coVerify(exactly = 0) { localRepo.save(any(), any()) }
-        coVerify(exactly = 0) { syncScheduler.scheduleImmediateSync() }
+        coVerify(exactly = 0) { syncManager.pushNow() }
     }
 
     @Test
@@ -132,7 +132,7 @@ class CredentialDetailViewModelTest {
         vm.delete()
 
         coVerify { localRepo.delete("id-1") }
-        coVerify { syncScheduler.scheduleImmediateSync() }
+        coVerify { syncManager.pushNow() }
     }
 
     @Test
@@ -140,7 +140,7 @@ class CredentialDetailViewModelTest {
         val vm = newVm()
         vm.delete()
         coVerify(exactly = 0) { localRepo.delete(any()) }
-        coVerify(exactly = 0) { syncScheduler.scheduleImmediateSync() }
+        coVerify(exactly = 0) { syncManager.pushNow() }
     }
 
     // ── load ─────────────────────────────────────────────────────────────────

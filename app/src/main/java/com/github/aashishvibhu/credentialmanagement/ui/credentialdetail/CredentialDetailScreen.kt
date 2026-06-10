@@ -59,6 +59,7 @@ fun CredentialDetailScreen(
     val notes           by viewModel.notes.collectAsState()
     val passwordVisible by viewModel.passwordVisible.collectAsState()
     val isLoading       by viewModel.isLoading.collectAsState()
+    val isSaving        by viewModel.isSaving.collectAsState()
     val canSave         by viewModel.canSave.collectAsState()
     val strength        by viewModel.passwordStrength.collectAsState()
 
@@ -95,7 +96,10 @@ fun CredentialDetailScreen(
                 },
                 actions = {
                     if (!viewModel.isNew) {
-                        IconButton(onClick = { showDeleteDialog = true }) {
+                        IconButton(
+                            onClick = { showDeleteDialog = true },
+                            enabled = !isSaving
+                        ) {
                             Icon(
                                 Icons.Default.Delete,
                                 "Delete",
@@ -103,8 +107,15 @@ fun CredentialDetailScreen(
                             )
                         }
                     }
-                    IconButton(onClick = viewModel::save, enabled = canSave) {
-                        Icon(Icons.Default.Check, "Save")
+                    IconButton(onClick = viewModel::save, enabled = canSave && !isSaving) {
+                        if (isSaving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp).padding(2.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.Check, "Save")
+                        }
                     }
                 }
             )
