@@ -37,7 +37,7 @@ class SyncScheduler @Inject constructor(
         )
     }
 
-    /** Enqueues a one-shot sync immediately. REPLACE cancels any pending immediate sync first. */
+    /** Enqueues a one-shot sync. KEEP means a running or queued sync is never cancelled mid-flight. */
     fun scheduleImmediateSync() {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(networkConstraint)
@@ -45,7 +45,7 @@ class SyncScheduler @Inject constructor(
             .build()
         workManager.enqueueUniqueWork(
             SyncWorker.WORK_NAME_IMMEDIATE,
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.KEEP,
             request
         )
     }
