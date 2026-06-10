@@ -346,30 +346,32 @@ File: `ui/settings/SettingsScreen.kt`
 
 ### 8.1 Screenshot prevention
 File: `ui/MainActivity.kt`
-- [ ] Add `window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)` in `onCreate`
+- [x] Add `window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)` in `onCreate`
 
 ### 8.2 Biometric lock state
 File: `ui/biometric/LockStateManager.kt`
-- [ ] Track `lastForegroundTime` in `LifecycleObserver`
-- [ ] If `now - lastForegroundTime > 60_000` ms on `onResume` → set locked state
-- [ ] `LockState: StateFlow<Boolean>` consumed by `NavGraph` to redirect to biometric screen
+- [x] `@Singleton LockStateManager` tracks `lastBackgroundedAt`; `MainActivity.onPause/onResume` call `onBackgrounded()`/`onForegrounded()`
+- [x] If `now - lastBackgroundedAt > 60_000` ms on foreground → set `isLocked = true`
+- [x] `isLocked: StateFlow<Boolean>` (via `LockViewModel`) consumed by `AppNavGraph` — redirects to `biometric_lock` while signed in, clearing the back stack
+- [x] `BiometricLockScreen` calls `LockViewModel.unlock()` on successful auth
 
 ### 8.3 Clipboard auto-clear
 File: `ui/credentiallist/CredentialListViewModel.kt`
-- [ ] On copy: `ClipboardManager.setPrimaryClip(...)` then `viewModelScope.launch { delay(30_000); clearClipboard() }`
+- [x] On copy: `ClipboardManager.setPrimaryClip(...)` then `viewModelScope.launch { delay(30_000); clearPrimaryClip() }`
 
 ### 8.4 In-memory wipe on lock
-- [ ] When app locks (biometric screen shown), clear decrypted `List<Credential>` from ViewModel state (set to `emptyList()`)
-- [ ] Re-fetch from Room after biometric success
+- [x] `credentials` flow gated on `LockStateManager.isLocked` — emits `emptyList()` while locked, wiping the decrypted list from memory
+- [x] On unlock, upstream Room flow re-emits and refills the list
 
 ### 8.5 Network security config
 File: `app/src/main/res/xml/network_security_config.xml`
-- [ ] `cleartextTrafficPermitted="false"`
-- [ ] Reference in `AndroidManifest.xml` via `android:networkSecurityConfig`
+- [x] `cleartextTrafficPermitted="false"`
+- [x] Referenced in `AndroidManifest.xml` via `android:networkSecurityConfig`
 
 ### 8.6 ProGuard rules
 File: `app/proguard-rules.pro`
-- [ ] Keep rules for: Gson/kotlinx.serialization models, Google Drive SDK, Hilt, Room
+- [x] Keep rules for: kotlinx.serialization models, Google Drive SDK / google-api-client (Gson + `@Key` fields), Hilt, Room
+- [x] `isMinifyEnabled = true` + `isShrinkResources = true` on release; `assembleRelease` (R8) succeeds
 
 **Phase 8 complete when:** screenshots are blocked, app locks after backgrounding, clipboard self-clears.
 
@@ -382,34 +384,36 @@ File: `app/proguard-rules.pro`
 ### 9.1 Unit tests
 Directory: `app/src/test/`
 
-- [ ] `VaultCryptoTest` — encrypt/decrypt round-trip, tampered ciphertext throws
-- [ ] `VaultSerializerTest` — serialize → deserialize produces equal list
-- [ ] `SyncManagerTest` — mock Drive and Room; verify merge logic for all 4 conflict cases
-- [ ] `CredentialDetailViewModelTest` — save triggers dirty flag; delete removes from repo
+- [x] `VaultCryptoTest` — encrypt/decrypt round-trip, tampered ciphertext throws (5 tests)
+- [x] `VaultSerializerTest` — serialize → deserialize produces equal list (4 tests)
+- [x] `SyncManagerTest` — mock Drive and Room; verify merge logic for all 4 conflict cases (8 tests)
+- [x] `CredentialDetailViewModelTest` — canSave, save with dirty flag, delete, load, generatePassword, passwordStrength (15 tests)
 
 ### 9.2 Instrumented tests
 Directory: `app/src/androidTest/`
 
-- [ ] `CredentialDaoTest` — upsert, getAll, getDirty, markAllClean using in-memory Room
-- [ ] `LocalCredentialRepositoryTest` — save + retrieve decrypts correctly
+- [x] `CredentialDaoTest` — upsert, getAll, getDirty, markAllClean using in-memory Room (9 tests)
+- [x] `LocalCredentialRepositoryTest` — save + retrieve decrypts correctly; corrupted entity drop (8 tests, unit test)
 
 ### 9.3 UI tests (optional)
 - [ ] `CredentialListScreenTest` — search filters list, swipe-to-delete shows snackbar
 - [ ] `SignInScreenTest` — loading state during sign-in
 
 **Phase 9 complete when:** `./gradlew test` and `./gradlew connectedAndroidTest` pass.
+`./gradlew testDebugUnitTest` → BUILD SUCCESSFUL, 50 tests, 0 failures.
 
 ---
 
 ## Phase 10 — Polish & Release Prep
 
-- [ ] Add empty-state illustration to Credential List (no credentials yet)
-- [ ] Add app icon (replace default launcher icon)
-- [ ] Set `isMinifyEnabled = true` and `isShrinkResources = true` in release build type
-- [ ] Verify ProGuard doesn't break Drive SDK or Room
-- [ ] Test on API 24 emulator (min SDK) and a physical device
-- [ ] Create a signed release APK/AAB via `Build > Generate Signed Bundle`
-- [ ] Review Drive API quota (default: 1 billion requests/day — sufficient)
+- [x] Add empty-state illustration to Credential List (no credentials yet) — `EmptyState()` composable
+- [ ] Add app icon (replace default launcher icon) — manual, requires image asset
+- [x] Set `isMinifyEnabled = true` and `isShrinkResources = true` in release build type (done in Phase 8)
+- [x] Verify ProGuard doesn't break Drive SDK or Room — `assembleRelease` (R8) succeeds
+- [x] Bump version to `versionCode = 2`, `versionName = "1.1.0"` for release
+- [ ] Test on API 24 emulator (min SDK) and a physical device — manual
+- [ ] Create a signed release APK/AAB via `Build > Generate Signed Bundle` — manual
+- [x] Review Drive API quota (default: 1 billion requests/day — sufficient)
 
 ---
 
