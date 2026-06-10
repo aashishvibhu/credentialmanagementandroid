@@ -1,15 +1,17 @@
 package com.github.aashishvibhu.credentialmanagement.sync
 
+import android.util.Log
+import com.github.aashishvibhu.credentialmanagement.data.auth.AuthRepository
 import com.github.aashishvibhu.credentialmanagement.data.local.LocalCredentialRepository
 import com.github.aashishvibhu.credentialmanagement.data.vault.VaultSerializer
 import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
 import com.github.aashishvibhu.credentialmanagement.domain.repository.DriveRepository
 import com.github.aashishvibhu.credentialmanagement.security.VaultCrypto
-import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.crypto.AEADBadTagException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,7 +20,8 @@ class SyncManager @Inject constructor(
     private val localRepo: LocalCredentialRepository,
     private val driveRepo: DriveRepository,
     private val vaultCrypto: VaultCrypto,
-    private val vaultSerializer: VaultSerializer
+    private val vaultSerializer: VaultSerializer,
+    private val authRepository: AuthRepository
 ) {
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -45,6 +48,8 @@ class SyncManager @Inject constructor(
     }
 
     private suspend fun performSync() {
+        val accountId = requireAccountId()
+
         val remoteModifiedMs = driveRepo.getVaultModifiedTime()
         val localCredentials = localRepo.getAllSnapshot()
         val localMaxUpdatedAt = localCredentials.maxOfOrNull { it.updatedAt } ?: 0L
@@ -55,12 +60,18 @@ class SyncManager @Inject constructor(
         if (remoteModifiedMs != null && remoteModifiedMs > localMaxUpdatedAt) {
             val encryptedRemote = driveRepo.downloadVault()
             if (encryptedRemote != null) {
-                val remoteCredentials = vaultSerializer.deserialize(
-                    vaultCrypto.decrypt(encryptedRemote)
-                )
-                val merged = merge(localCredentials, remoteCredentials)
-                localRepo.replaceAll(merged, isDirty = false)
-                shouldUpload = true  // always re-upload after a merge so Drive reflects merged state
+                try {
+                    val remoteCredentials = vaultSerializer.deserialize(
+                        vaultCrypto.decryptFromDrive(encryptedRemote, accountId)
+                    )
+                    val merged = merge(localCredentials, remoteCredentials)
+                    localRepo.replaceAll(merged, isDirty = false)
+                } catch (e: AEADBadTagException) {
+                    // Vault was encrypted with a different key (different device/install).
+                    // Overwrite Drive with current local state on the next upload step.
+                    Log.w(TAG, "Remote vault decryption failed — overwriting with local state", e)
+                }
+                shouldUpload = true
             }
         }
 
@@ -68,7 +79,7 @@ class SyncManager @Inject constructor(
         if (shouldUpload || remoteModifiedMs == null) {
             val snapshot = localRepo.getAllSnapshot()
             driveRepo.uploadVault(
-                vaultCrypto.encrypt(vaultSerializer.serialize(snapshot))
+                vaultCrypto.encryptForDrive(vaultSerializer.serialize(snapshot), accountId)
             )
             localRepo.markAllClean()
         }
@@ -82,8 +93,11 @@ class SyncManager @Inject constructor(
         if (!isSyncing.compareAndSet(false, true)) return
         _syncState.value = SyncState.Syncing
         try {
+            val accountId = requireAccountId()
             val snapshot = localRepo.getAllSnapshot()
-            driveRepo.uploadVault(vaultCrypto.encrypt(vaultSerializer.serialize(snapshot)))
+            driveRepo.uploadVault(
+                vaultCrypto.encryptForDrive(vaultSerializer.serialize(snapshot), accountId)
+            )
             localRepo.markAllClean()
             _syncState.value = SyncState.Success
         } catch (e: Exception) {
@@ -94,6 +108,11 @@ class SyncManager @Inject constructor(
             isSyncing.set(false)
         }
     }
+
+    private fun requireAccountId(): String =
+        authRepository.getSignedInAccount()?.id
+            ?: authRepository.getSignedInAccount()?.email
+            ?: throw IllegalStateException("Drive operations require a signed-in account")
 
     /** Last-write-wins merge by id: keeps the credential with the newest updatedAt. */
     private fun merge(local: List<Credential>, remote: List<Credential>): List<Credential> =

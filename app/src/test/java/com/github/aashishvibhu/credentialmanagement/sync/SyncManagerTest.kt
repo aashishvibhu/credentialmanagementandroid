@@ -1,10 +1,12 @@
 package com.github.aashishvibhu.credentialmanagement.sync
 
+import com.github.aashishvibhu.credentialmanagement.data.auth.AuthRepository
 import com.github.aashishvibhu.credentialmanagement.data.local.LocalCredentialRepository
 import com.github.aashishvibhu.credentialmanagement.data.vault.VaultSerializer
 import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
 import com.github.aashishvibhu.credentialmanagement.domain.repository.DriveRepository
 import com.github.aashishvibhu.credentialmanagement.security.VaultCrypto
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import io.mockk.coEvery
 import io.mockk.coJustRun
 import io.mockk.coVerify
@@ -18,19 +20,27 @@ import org.junit.Test
 
 class SyncManagerTest {
 
-    private val localRepo     = mockk<LocalCredentialRepository>()
-    private val driveRepo     = mockk<DriveRepository>()
-    private val vaultCrypto   = mockk<VaultCrypto>()
+    private val localRepo      = mockk<LocalCredentialRepository>()
+    private val driveRepo      = mockk<DriveRepository>()
+    private val vaultCrypto    = mockk<VaultCrypto>()
     private val vaultSerializer = mockk<VaultSerializer>()
+    private val authRepository = mockk<AuthRepository>()
+    private val mockAccount    = mockk<GoogleSignInAccount>()
 
     private lateinit var syncManager: SyncManager
 
-    private val credOld = Credential(id = "1", title = "T", username = "U", password = "P", updatedAt = 1000L, createdAt = 1000L)
+    private val credOld = Credential(id = "1", title = "T", username = "U", password = "P",     updatedAt = 1000L, createdAt = 1000L)
     private val credNew = Credential(id = "1", title = "T", username = "U", password = "P_new", updatedAt = 9000L, createdAt = 1000L)
+
+    companion object {
+        private const val ACCOUNT_ID = "test_account_123"
+    }
 
     @Before
     fun setUp() {
-        syncManager = SyncManager(localRepo, driveRepo, vaultCrypto, vaultSerializer)
+        every { mockAccount.id } returns ACCOUNT_ID
+        every { authRepository.getSignedInAccount() } returns mockAccount
+        syncManager = SyncManager(localRepo, driveRepo, vaultCrypto, vaultSerializer, authRepository)
     }
 
     // ── No remote vault yet ───────────────────────────────────────────────────
@@ -41,7 +51,7 @@ class SyncManagerTest {
         coEvery { localRepo.getAllSnapshot() } returns listOf(credOld)
         coEvery { localRepo.hasDirtyEntries() } returns false
         every { vaultSerializer.serialize(any()) } returns "[{}]"
-        every { vaultCrypto.encrypt("[{}]") } returns "enc"
+        every { vaultCrypto.encryptForDrive("[{}]", ACCOUNT_ID) } returns "enc"
         coJustRun { driveRepo.uploadVault("enc") }
         coJustRun { localRepo.markAllClean() }
 
@@ -59,7 +69,7 @@ class SyncManagerTest {
         coEvery { localRepo.getAllSnapshot() } returns listOf(credOld)
         coEvery { localRepo.hasDirtyEntries() } returns true
         every { vaultSerializer.serialize(any()) } returns "[{}]"
-        every { vaultCrypto.encrypt(any()) } returns "enc"
+        every { vaultCrypto.encryptForDrive(any(), ACCOUNT_ID) } returns "enc"
         coJustRun { driveRepo.uploadVault(any()) }
         coJustRun { localRepo.markAllClean() }
 
@@ -80,11 +90,11 @@ class SyncManagerTest {
         )
         coEvery { localRepo.hasDirtyEntries() } returns false
         coEvery { driveRepo.downloadVault() } returns "remote_enc"
-        every { vaultCrypto.decrypt("remote_enc") } returns "[remote]"
+        every { vaultCrypto.decryptFromDrive("remote_enc", ACCOUNT_ID) } returns "[remote]"
         every { vaultSerializer.deserialize("[remote]") } returns listOf(credNew)
         coJustRun { localRepo.replaceAll(any(), any()) }
         every { vaultSerializer.serialize(listOf(credNew)) } returns "[merged]"
-        every { vaultCrypto.encrypt("[merged]") } returns "merged_enc"
+        every { vaultCrypto.encryptForDrive("[merged]", ACCOUNT_ID) } returns "merged_enc"
         coJustRun { driveRepo.uploadVault("merged_enc") }
         coJustRun { localRepo.markAllClean() }
 
@@ -114,8 +124,8 @@ class SyncManagerTest {
 
     @Test
     fun `merge keeps newer updatedAt when same id exists locally and remotely`() = runTest {
-        val localV = credOld                    // updatedAt = 1000
-        val remoteV = credNew                   // updatedAt = 9000 → should win
+        val localV  = credOld   // updatedAt = 1000
+        val remoteV = credNew   // updatedAt = 9000 → should win
 
         coEvery { driveRepo.getVaultModifiedTime() } returns 9999L
         coEvery { localRepo.getAllSnapshot() } returnsMany listOf(
@@ -124,23 +134,44 @@ class SyncManagerTest {
         )
         coEvery { localRepo.hasDirtyEntries() } returns false
         coEvery { driveRepo.downloadVault() } returns "enc"
-        every { vaultCrypto.decrypt("enc") } returns "[r]"
+        every { vaultCrypto.decryptFromDrive("enc", ACCOUNT_ID) } returns "[r]"
         every { vaultSerializer.deserialize("[r]") } returns listOf(remoteV)
         coJustRun { localRepo.replaceAll(any(), any()) }
         every { vaultSerializer.serialize(any()) } returns "[]"
-        every { vaultCrypto.encrypt(any()) } returns "e"
+        every { vaultCrypto.encryptForDrive(any(), ACCOUNT_ID) } returns "e"
         coJustRun { driveRepo.uploadVault(any()) }
         coJustRun { localRepo.markAllClean() }
 
         syncManager.sync()
 
-        // Merged list should contain the remote version (newer updatedAt wins)
         coVerify {
             localRepo.replaceAll(
                 match { it.size == 1 && it[0].password == "P_new" },
                 isDirty = false
             )
         }
+    }
+
+    // ── AEADBadTagException (stale Keystore-encrypted vault on Drive) ──────────
+
+    @Test
+    fun `bad tag on remote vault is swallowed and local state is uploaded`() = runTest {
+        coEvery { driveRepo.getVaultModifiedTime() } returns 9999L
+        coEvery { localRepo.getAllSnapshot() } returns listOf(credOld)
+        coEvery { localRepo.hasDirtyEntries() } returns false
+        coEvery { driveRepo.downloadVault() } returns "stale_enc"
+        every { vaultCrypto.decryptFromDrive("stale_enc", ACCOUNT_ID) } throws
+            javax.crypto.AEADBadTagException()
+        every { vaultSerializer.serialize(listOf(credOld)) } returns "[local]"
+        every { vaultCrypto.encryptForDrive("[local]", ACCOUNT_ID) } returns "local_enc"
+        coJustRun { driveRepo.uploadVault("local_enc") }
+        coJustRun { localRepo.markAllClean() }
+
+        syncManager.sync()  // must not throw
+
+        coVerify { driveRepo.uploadVault("local_enc") }
+        coVerify { localRepo.markAllClean() }
+        assertEquals(SyncState.Success, syncManager.syncState.value)
     }
 
     // ── State transitions ─────────────────────────────────────────────────────
@@ -151,7 +182,7 @@ class SyncManagerTest {
         coEvery { localRepo.getAllSnapshot() } returns emptyList()
         coEvery { localRepo.hasDirtyEntries() } returns false
         every { vaultSerializer.serialize(emptyList()) } returns "[]"
-        every { vaultCrypto.encrypt("[]") } returns "e"
+        every { vaultCrypto.encryptForDrive("[]", ACCOUNT_ID) } returns "e"
         coJustRun { driveRepo.uploadVault(any()) }
         coJustRun { localRepo.markAllClean() }
 
@@ -171,18 +202,17 @@ class SyncManagerTest {
 
     @Test
     fun `concurrent sync call is ignored while first is running`() = runTest {
-        // Once isSyncing is true, a second call must return without changing state
         coEvery { driveRepo.getVaultModifiedTime() } returns null
         coEvery { localRepo.getAllSnapshot() } returns emptyList()
         coEvery { localRepo.hasDirtyEntries() } returns false
         every { vaultSerializer.serialize(any()) } returns "[]"
-        every { vaultCrypto.encrypt(any()) } returns "e"
+        every { vaultCrypto.encryptForDrive(any(), ACCOUNT_ID) } returns "e"
         coJustRun { driveRepo.uploadVault(any()) }
         coJustRun { localRepo.markAllClean() }
 
-        syncManager.sync()                  // first call completes normally
+        syncManager.sync()
         assertEquals(SyncState.Success, syncManager.syncState.value)
-        syncManager.sync()                  // second call on idle state — also succeeds
+        syncManager.sync()
         assertEquals(SyncState.Success, syncManager.syncState.value)
     }
 }
