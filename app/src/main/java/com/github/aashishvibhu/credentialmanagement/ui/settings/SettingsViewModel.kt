@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.aashishvibhu.credentialmanagement.data.auth.AuthRepository
 import com.github.aashishvibhu.credentialmanagement.data.local.LocalCredentialRepository
-import com.github.aashishvibhu.credentialmanagement.sync.SyncManager
+import com.github.aashishvibhu.credentialmanagement.sync.VaultSyncManager
 import com.github.aashishvibhu.credentialmanagement.sync.SyncScheduler
 import com.github.aashishvibhu.credentialmanagement.sync.SyncState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,20 +18,23 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val localRepo: LocalCredentialRepository,
-    private val syncManager: SyncManager,
+    private val vaultSyncManager: VaultSyncManager,
     private val syncScheduler: SyncScheduler
 ) : ViewModel() {
 
-    val syncState: StateFlow<SyncState> = syncManager.syncState
+    val syncState: StateFlow<SyncState> = vaultSyncManager.syncState
 
     private val _lastSyncTime = MutableStateFlow<Long?>(null)
     val lastSyncTime: StateFlow<Long?> = _lastSyncTime.asStateFlow()
 
-    val signedInEmail: String get() = authRepository.getSignedInAccount()?.email ?: ""
+    private val _signedInEmail = MutableStateFlow(
+        authRepository.getSignedInAccount()?.email ?: ""
+    )
+    val signedInEmail: StateFlow<String> = _signedInEmail.asStateFlow()
 
     init {
         viewModelScope.launch {
-            syncManager.syncState.collect { state ->
+            vaultSyncManager.syncState.collect { state ->
                 if (state is SyncState.Success) _lastSyncTime.value = System.currentTimeMillis()
             }
         }
@@ -42,8 +45,9 @@ class SettingsViewModel @Inject constructor(
     fun signOut() {
         viewModelScope.launch {
             syncScheduler.cancelAll()
-            localRepo.replaceAll(emptyList())
+            localRepo.clearCache()
             authRepository.signOut()
+            _signedInEmail.value = ""
         }
     }
 }

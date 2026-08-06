@@ -3,16 +3,16 @@ package com.github.aashishvibhu.credentialmanagement.ui.credentiallist
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.aashishvibhu.credentialmanagement.data.local.LocalCredentialRepository
 import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
-import com.github.aashishvibhu.credentialmanagement.sync.SyncManager
-import com.github.aashishvibhu.credentialmanagement.sync.SyncScheduler
+import com.github.aashishvibhu.credentialmanagement.sync.VaultSyncManager
 import com.github.aashishvibhu.credentialmanagement.sync.SyncState
 import com.github.aashishvibhu.credentialmanagement.ui.biometric.LockStateManager
+import com.github.aashishvibhu.credentialmanagement.util.ConnectivityChecker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,18 +25,20 @@ import javax.inject.Inject
 @HiltViewModel
 class CredentialListViewModel @Inject constructor(
     private val localRepo: LocalCredentialRepository,
-    private val syncManager: SyncManager,
-    private val syncScheduler: SyncScheduler,
-    private val lockStateManager: LockStateManager
+    private val vaultSyncManager: VaultSyncManager,
+    private val lockStateManager: LockStateManager,
+    private val connectivityChecker: ConnectivityChecker
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery
 
-    val syncState: StateFlow<SyncState> = syncManager.syncState
+    val syncState: StateFlow<SyncState> = vaultSyncManager.syncState
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     // Gated on the lock state: while locked, the decrypted list is wiped from memory
-    // (emits emptyList). On unlock the upstream Room flow re-emits and refills it.
     val credentials: StateFlow<List<Credential>> = combine(
         localRepo.getAll(),
         _searchQuery,
@@ -54,22 +56,47 @@ class CredentialListViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var recentlyDeleted: Credential? = null
+    private var clipboardClearJob: Job? = null
+
+    fun clearError() { _errorMessage.value = null }
 
     fun onSearchQueryChange(query: String) { _searchQuery.value = query }
 
     fun deleteCredential(credential: Credential) {
         recentlyDeleted = credential
         viewModelScope.launch {
-            localRepo.delete(credential.id)
-            syncScheduler.scheduleImmediateSync()
+            if (!connectivityChecker.isOnline()) {
+                _errorMessage.value = "No internet connection."
+                recentlyDeleted = null
+                return@launch
+            }
+            try {
+                val remote = vaultSyncManager.pullLatestCredentials()
+                val reduced = remote.filter { it.id != credential.id }
+                vaultSyncManager.pushFullVault(reduced)
+                localRepo.delete(credential.id)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "Failed to delete."
+                recentlyDeleted = null
+            }
         }
     }
 
     fun undoDelete() {
         recentlyDeleted?.let { cred ->
             viewModelScope.launch {
-                localRepo.save(cred, isDirty = true)
-                syncScheduler.scheduleImmediateSync()
+                if (!connectivityChecker.isOnline()) {
+                    _errorMessage.value = "No internet connection."
+                    return@launch
+                }
+                try {
+                    val remote = vaultSyncManager.pullLatestCredentials()
+                    val restored = remote + cred
+                    vaultSyncManager.pushFullVault(restored)
+                    localRepo.save(cred)
+                } catch (e: Exception) {
+                    _errorMessage.value = e.message ?: "Failed to restore."
+                }
             }
         }
         recentlyDeleted = null
@@ -78,10 +105,12 @@ class CredentialListViewModel @Inject constructor(
     fun copyToClipboard(context: Context, text: String, label: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
-        viewModelScope.launch {
+        // Cancel any pending clear and schedule a new one that only clears if this text is still on clipboard
+        clipboardClearJob?.cancel()
+        clipboardClearJob = viewModelScope.launch {
             delay(30_000)
-            @Suppress("DEPRECATION")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val currentClip = clipboard.primaryClip?.getItemAt(0)?.text?.toString()
+            if (currentClip == text) {
                 clipboard.clearPrimaryClip()
             }
         }

@@ -3,10 +3,12 @@ package com.github.aashishvibhu.credentialmanagement.ui.credentialdetail
 import androidx.lifecycle.SavedStateHandle
 import com.github.aashishvibhu.credentialmanagement.data.local.LocalCredentialRepository
 import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
-import com.github.aashishvibhu.credentialmanagement.sync.SyncManager
+import com.github.aashishvibhu.credentialmanagement.sync.VaultSyncManager
+import com.github.aashishvibhu.credentialmanagement.util.ConnectivityChecker
 import io.mockk.coEvery
 import io.mockk.coJustRun
 import io.mockk.coVerify
+import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -14,7 +16,6 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import io.mockk.mockk
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -26,14 +27,17 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class CredentialDetailViewModelTest {
 
-    private val localRepo      = mockk<LocalCredentialRepository>()
-    private val syncManager    = mockk<SyncManager>()
-    private val testDispatcher = UnconfinedTestDispatcher()
+    private val localRepo          = mockk<LocalCredentialRepository>()
+    private val vaultSyncManager   = mockk<VaultSyncManager>()
+    private val connectivityChecker = mockk<ConnectivityChecker>()
+    private val testDispatcher     = UnconfinedTestDispatcher()
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        coJustRun { syncManager.pushNow() }
+        every { connectivityChecker.isOnline() } returns true
+        coJustRun { localRepo.save(any()) }
+        coJustRun { vaultSyncManager.pushFullVault(any()) }
     }
 
     @After
@@ -44,7 +48,8 @@ class CredentialDetailViewModelTest {
     private fun newVm(id: String = "new") = CredentialDetailViewModel(
         SavedStateHandle(mapOf("credentialId" to id)),
         localRepo,
-        syncManager
+        vaultSyncManager,
+        connectivityChecker
     )
 
     // ── canSave ───────────────────────────────────────────────────────────────
@@ -65,7 +70,6 @@ class CredentialDetailViewModelTest {
     @Test
     fun `canSave becomes true when both title and username are set`() = runTest {
         val vm = newVm()
-        // Launch on Main (UnconfinedTestDispatcher) so the WhileSubscribed upstream runs eagerly.
         val job = launch(Dispatchers.Main) { vm.canSave.collect {} }
         vm.onTitleChange("GitHub")
         vm.onUsernameChange("user@example.com")
@@ -76,8 +80,14 @@ class CredentialDetailViewModelTest {
     // ── save ─────────────────────────────────────────────────────────────────
 
     @Test
-    fun `save stores credential as dirty and schedules sync`() = runTest {
-        coJustRun { localRepo.save(any(), any()) }
+    fun `save pulls latest vault and uploads merged result`() = runTest {
+        val existingRemote = Credential(
+            id = "existing-1", title = "Old", username = "old",
+            password = "old", updatedAt = 1000L
+        )
+        coEvery { vaultSyncManager.pullLatestCredentials() } returns listOf(existingRemote)
+        coJustRun { vaultSyncManager.pushFullVault(any()) }
+
         val vm = newVm()
         val job = launch(Dispatchers.Main) { vm.canSave.collect {} }
         vm.onTitleChange("GitHub")
@@ -86,13 +96,13 @@ class CredentialDetailViewModelTest {
 
         vm.save()
 
+        coVerify { vaultSyncManager.pullLatestCredentials() }
         coVerify {
-            localRepo.save(
-                match { it.title == "GitHub" && it.username == "user" && it.password == "s3cr3t!" },
-                isDirty = true
+            vaultSyncManager.pushFullVault(
+                match { list -> list.size == 2 }
             )
         }
-        coVerify { syncManager.pushNow() }
+        coVerify { localRepo.save(match { it.title == "GitHub" }) }
         job.cancel()
     }
 
@@ -100,13 +110,13 @@ class CredentialDetailViewModelTest {
     fun `save does nothing when canSave is false`() = runTest {
         val vm = newVm()
         vm.save()
-        coVerify(exactly = 0) { localRepo.save(any(), any()) }
-        coVerify(exactly = 0) { syncManager.pushNow() }
+        coVerify(exactly = 0) { localRepo.save(any()) }
+        coVerify(exactly = 0) { vaultSyncManager.pushFullVault(any()) }
     }
 
     @Test
     fun `save emits navEvent after saving`() = runTest {
-        coJustRun { localRepo.save(any(), any()) }
+        coEvery { vaultSyncManager.pullLatestCredentials() } returns emptyList()
         val vm = newVm()
         val canSaveJob = launch(Dispatchers.Main) { vm.canSave.collect {} }
         vm.onTitleChange("T")
@@ -124,15 +134,21 @@ class CredentialDetailViewModelTest {
     // ── delete ────────────────────────────────────────────────────────────────
 
     @Test
-    fun `delete removes credential from repo and schedules sync`() = runTest {
+    fun `delete pulls vault removes credential and uploads reduced vault`() = runTest {
+        val existingRemote = Credential(
+            id = "id-1", title = "T", username = "U", password = "P", updatedAt = 1000L
+        )
         coEvery { localRepo.getById("id-1") } returns null
+        coEvery { vaultSyncManager.pullLatestCredentials() } returns listOf(existingRemote)
+        coJustRun { vaultSyncManager.pushFullVault(any()) }
         coJustRun { localRepo.delete("id-1") }
         val vm = newVm("id-1")
 
         vm.delete()
 
+        coVerify { vaultSyncManager.pullLatestCredentials() }
+        coVerify { vaultSyncManager.pushFullVault(match { it.isEmpty() }) }
         coVerify { localRepo.delete("id-1") }
-        coVerify { syncManager.pushNow() }
     }
 
     @Test
@@ -140,7 +156,7 @@ class CredentialDetailViewModelTest {
         val vm = newVm()
         vm.delete()
         coVerify(exactly = 0) { localRepo.delete(any()) }
-        coVerify(exactly = 0) { syncManager.pushNow() }
+        coVerify(exactly = 0) { vaultSyncManager.pushFullVault(any()) }
     }
 
     // ── load ─────────────────────────────────────────────────────────────────
@@ -188,6 +204,8 @@ class CredentialDetailViewModelTest {
         val first = vm.password.value
         vm.generatePassword()
         assertNotEquals(first, vm.password.value)
+    }
+}
     }
 
     // ── passwordStrength ──────────────────────────────────────────────────────

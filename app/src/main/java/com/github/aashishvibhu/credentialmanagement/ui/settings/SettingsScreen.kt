@@ -46,6 +46,7 @@ fun SettingsScreen(
 ) {
     val syncState    by viewModel.syncState.collectAsState()
     val lastSyncTime by viewModel.lastSyncTime.collectAsState()
+    val signedInEmail by viewModel.signedInEmail.collectAsState()
     val context = LocalContext.current
     var showSignOutDialog by remember { mutableStateOf(false) }
 
@@ -59,7 +60,7 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showSignOutDialog = false },
             title = { Text("Sign out") },
-            text = { Text("Your local credentials will be cleared. They remain encrypted in Google Drive.") },
+            text = { Text("Your vault remains encrypted in Google Drive. Sign in again to restore your credentials.") },
             confirmButton = {
                 TextButton(onClick = { showSignOutDialog = false; viewModel.signOut() }) {
                     Text("Sign out", color = MaterialTheme.colorScheme.error)
@@ -89,10 +90,10 @@ fun SettingsScreen(
                 .padding(padding)
         ) {
             // Account
-            if (viewModel.signedInEmail.isNotBlank()) {
+            if (signedInEmail.isNotBlank()) {
                 ListItem(
                     headlineContent = { Text("Signed in as") },
-                    supportingContent = { Text(viewModel.signedInEmail) }
+                    supportingContent = { Text(signedInEmail) }
                 )
                 HorizontalDivider()
             }

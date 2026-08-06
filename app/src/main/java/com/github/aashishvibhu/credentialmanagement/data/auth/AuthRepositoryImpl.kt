@@ -22,12 +22,13 @@ class AuthRepositoryImpl @Inject constructor(
 
     override suspend fun handleSignInResult(data: Intent?) {
         try {
-            val account = GoogleSignIn
-                .getSignedInAccountFromIntent(data)
-                .getResult(ApiException::class.java)
+            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+            val account = task.getResult(ApiException::class.java)
             _authState.value = AuthState.SignedIn(account.email ?: "")
         } catch (e: ApiException) {
             _authState.value = AuthState.Error("Sign-in failed (code ${e.statusCode})")
+        } catch (e: Exception) {
+            _authState.value = AuthState.Error(e.message ?: "Sign-in failed")
         }
     }
 

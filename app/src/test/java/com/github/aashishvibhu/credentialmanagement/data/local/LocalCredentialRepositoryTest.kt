@@ -27,7 +27,7 @@ class LocalCredentialRepositoryTest {
     private val credential = Credential(
         id = "id-1", title = "GitHub", username = "user", password = "pass"
     )
-    private val entity = CredentialEntity("id-1", "encrypted_blob", 0L, true)
+    private val entity = CredentialEntity("id-1", "encrypted_blob", 0L)
 
     @Before
     fun setUp() {
@@ -48,7 +48,7 @@ class LocalCredentialRepositoryTest {
 
     @Test
     fun `getAll silently drops corrupted entities`() = runTest {
-        val bad = CredentialEntity("bad", "corrupted", 0L, false)
+        val bad = CredentialEntity("bad", "corrupted", 0L)
         every { dao.getAll() } returns flowOf(listOf(entity, bad))
         every { vaultCrypto.decrypt("encrypted_blob") } returns """{}"""
         every { vaultSerializer.deserializeOne("""{}""") } returns credential
@@ -60,7 +60,7 @@ class LocalCredentialRepositoryTest {
     }
 
     @Test
-    fun `save encrypts credential and upserts with dirty flag`() = runTest {
+    fun `save encrypts credential and upserts entity`() = runTest {
         every { vaultSerializer.serializeOne(credential) } returns """{"id":"id-1"}"""
         every { vaultCrypto.encrypt("""{"id":"id-1"}""") } returns "encrypted_blob"
         coJustRun { dao.upsert(any()) }
@@ -69,20 +69,9 @@ class LocalCredentialRepositoryTest {
 
         coVerify {
             dao.upsert(match {
-                it.id == "id-1" && it.encryptedBlob == "encrypted_blob" && it.isDirty
+                it.id == "id-1" && it.encryptedBlob == "encrypted_blob"
             })
         }
-    }
-
-    @Test
-    fun `save with isDirty false stores clean entity`() = runTest {
-        every { vaultSerializer.serializeOne(credential) } returns """{}"""
-        every { vaultCrypto.encrypt(any()) } returns "blob"
-        coJustRun { dao.upsert(any()) }
-
-        repository.save(credential, isDirty = false)
-
-        coVerify { dao.upsert(match { !it.isDirty }) }
     }
 
     @Test
@@ -93,28 +82,22 @@ class LocalCredentialRepositoryTest {
     }
 
     @Test
-    fun `hasDirtyEntries returns true when dirty entries exist`() = runTest {
-        coEvery { dao.getDirty() } returns listOf(entity)
-        assertTrue(repository.hasDirtyEntries())
-    }
-
-    @Test
-    fun `markAllClean delegates to dao`() = runTest {
-        coJustRun { dao.markAllClean() }
-        repository.markAllClean()
-        coVerify { dao.markAllClean() }
-    }
-
-    @Test
-    fun `replaceAll clears table then inserts all as clean`() = runTest {
+    fun `refreshCache clears table then inserts all`() = runTest {
         coJustRun { dao.deleteAll() }
-        coJustRun { dao.upsertAll(any()) }
+        coJustRun { dao.upsert(any()) }
         every { vaultSerializer.serializeOne(any()) } returns """{}"""
         every { vaultCrypto.encrypt(any()) } returns "blob"
 
-        repository.replaceAll(listOf(credential))
+        repository.refreshCache(listOf(credential))
 
         coVerify { dao.deleteAll() }
-        coVerify { dao.upsertAll(match { it.size == 1 && !it[0].isDirty }) }
+        coVerify(exactly = 1) { dao.upsert(any()) }
+    }
+
+    @Test
+    fun `clearCache deletes all from dao`() = runTest {
+        coJustRun { dao.deleteAll() }
+        repository.clearCache()
+        coVerify { dao.deleteAll() }
     }
 }

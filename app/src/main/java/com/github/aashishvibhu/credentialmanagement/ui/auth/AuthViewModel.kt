@@ -28,7 +28,7 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch { authRepository.silentSignIn() }
     }
 
-    /** Starts periodic background sync whenever the user is signed in. */
+    /** Starts periodic background pull-sync whenever the user is signed in. */
     private fun observeAuthForSync() {
         viewModelScope.launch {
             authRepository.authState.collect { state ->

@@ -23,7 +23,9 @@ object DatabaseModule {
         context,
         CredentialDatabase::class.java,
         "credential_db"
-    ).build()
+    )
+        .fallbackToDestructiveMigration()
+        .build()
 
     @Provides
     fun provideCredentialDao(database: CredentialDatabase): CredentialDao =

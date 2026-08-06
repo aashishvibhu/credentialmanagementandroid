@@ -19,29 +19,28 @@ class LocalCredentialRepository @Inject constructor(
         entities.mapNotNull { it.toCredential() }
     }
 
-    /** One-shot snapshot of all credentials — used by SyncManager to build vault. */
+    /** One-shot snapshot of all credentials — used to build full vault for upload. */
     suspend fun getAllSnapshot(): List<Credential> =
         dao.getAllSuspend().mapNotNull { it.toCredential() }
 
-    suspend fun save(credential: Credential, isDirty: Boolean = true) {
-        dao.upsert(credential.toEntity(isDirty))
+    suspend fun save(credential: Credential) {
+        dao.upsert(credential.toEntity())
     }
 
-    /** Bulk-replace all local credentials (called after downloading vault from Drive). */
-    suspend fun replaceAll(credentials: List<Credential>, isDirty: Boolean = false) {
+    /** Bulk-replace all local cache entries (called after pulling vault from Drive). */
+    suspend fun refreshCache(credentials: List<Credential>) {
         dao.deleteAll()
-        dao.upsertAll(credentials.map { it.toEntity(isDirty) })
+        credentials.forEach { dao.upsert(it.toEntity()) }
+    }
+
+    /** Clear the entire cache (called on sign-out). */
+    suspend fun clearCache() {
+        dao.deleteAll()
     }
 
     suspend fun getById(id: String): Credential? = dao.getById(id)?.toCredential()
 
     suspend fun delete(id: String) = dao.delete(id)
-
-    suspend fun getDirty(): List<CredentialEntity> = dao.getDirty()
-
-    suspend fun hasDirtyEntries(): Boolean = dao.getDirty().isNotEmpty()
-
-    suspend fun markAllClean() = dao.markAllClean()
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
@@ -49,10 +48,9 @@ class LocalCredentialRepository @Inject constructor(
         vaultSerializer.deserializeOne(vaultCrypto.decrypt(encryptedBlob))
     }.getOrNull()
 
-    private fun Credential.toEntity(isDirty: Boolean) = CredentialEntity(
+    private fun Credential.toEntity() = CredentialEntity(
         id = id,
         encryptedBlob = vaultCrypto.encrypt(vaultSerializer.serializeOne(this)),
-        updatedAt = updatedAt,
-        isDirty = isDirty
+        updatedAt = updatedAt
     )
 }

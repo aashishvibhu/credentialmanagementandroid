@@ -16,10 +16,19 @@ class KeystoreManager @Inject constructor() {
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
     }
 
+    @Volatile
+    private var cachedKey: SecretKey? = null
+
     fun getOrCreateKey(): SecretKey {
-        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
-        return generateKey()
+        cachedKey?.let { return it }
+        synchronized(this) {
+            cachedKey?.let { return it }
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            val existing = keyStore.getKey(KEY_ALIAS, null) as? SecretKey
+            val key = existing ?: generateKey()
+            cachedKey = key
+            return key
+        }
     }
 
     private fun generateKey(): SecretKey {

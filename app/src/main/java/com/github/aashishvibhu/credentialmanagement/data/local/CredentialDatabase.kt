@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [CredentialEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class CredentialDatabase : RoomDatabase() {

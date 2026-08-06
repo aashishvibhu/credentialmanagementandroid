@@ -11,7 +11,7 @@ import dagger.assisted.AssistedInject
 class SyncWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted workerParams: WorkerParameters,
-    private val syncManager: SyncManager
+    private val vaultSyncManager: VaultSyncManager
 ) : CoroutineWorker(context, workerParams) {
 
     companion object {
@@ -21,7 +21,7 @@ class SyncWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         return try {
-            syncManager.sync()
+            vaultSyncManager.pullFromDrive()
             Result.success()
         } catch (e: IllegalStateException) {
             // Not signed in — no point retrying until the user signs in

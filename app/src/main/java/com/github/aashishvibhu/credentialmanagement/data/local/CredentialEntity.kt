@@ -7,6 +7,5 @@ import androidx.room.PrimaryKey
 data class CredentialEntity(
     @PrimaryKey val id: String,
     val encryptedBlob: String,  // AES-GCM encrypted JSON of a single Credential
-    val updatedAt: Long,
-    val isDirty: Boolean        // true = pending upload to Drive
+    val updatedAt: Long
 )

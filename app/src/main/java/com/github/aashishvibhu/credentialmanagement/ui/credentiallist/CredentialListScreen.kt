@@ -70,9 +70,17 @@ fun CredentialListScreen(
     val credentials by viewModel.credentials.collectAsState()
     val searchQuery  by viewModel.searchQuery.collectAsState()
     val syncState    by viewModel.syncState.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
     val context      = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Long)
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
         topBar = {

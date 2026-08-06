@@ -28,6 +28,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -62,11 +65,20 @@ fun CredentialDetailScreen(
     val isSaving        by viewModel.isSaving.collectAsState()
     val canSave         by viewModel.canSave.collectAsState()
     val strength        by viewModel.passwordStrength.collectAsState()
+    val errorMessage    by viewModel.errorMessage.collectAsState()
 
+    val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(viewModel.navEvent) {
         viewModel.navEvent.collect { onBack() }
+    }
+
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Long)
+            viewModel.clearError()
+        }
     }
 
     if (showDeleteDialog) {
@@ -118,7 +130,8 @@ fun CredentialDetailScreen(
                         }
                     }
                 }
-            )
+            ),
+            snackbarHost = { SnackbarHost(snackbarHostState) }
         }
     ) { padding ->
         if (isLoading) {

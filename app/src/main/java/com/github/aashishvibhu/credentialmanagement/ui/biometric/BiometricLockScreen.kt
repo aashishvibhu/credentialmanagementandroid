@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,7 @@ fun BiometricLockScreen(
     val context = LocalContext.current
     var showRetry by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+    var prompt by remember { mutableStateOf<BiometricPrompt?>(null) }
 
     // Clears the lock state (and triggers the in-memory wipe to refill) before navigating.
     fun authenticated() {
@@ -83,10 +85,15 @@ fun BiometricLockScreen(
             .setAllowedAuthenticators(BIOMETRIC_WEAK or DEVICE_CREDENTIAL)
             .build()
 
-        BiometricPrompt(activity, executor, callback).authenticate(promptInfo)
+        prompt = BiometricPrompt(activity, executor, callback)
+        prompt!!.authenticate(promptInfo)
     }
 
     LaunchedEffect(Unit) { launchPrompt() }
+
+    DisposableEffect(Unit) {
+        onDispose { prompt?.cancelAuthentication() }
+    }
 
     Scaffold { padding ->
         Column(

@@ -5,7 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.aashishvibhu.credentialmanagement.data.local.LocalCredentialRepository
 import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
-import com.github.aashishvibhu.credentialmanagement.sync.SyncManager
+import com.github.aashishvibhu.credentialmanagement.sync.VaultSyncManager
+import com.github.aashishvibhu.credentialmanagement.util.ConnectivityChecker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +24,8 @@ import javax.inject.Inject
 class CredentialDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val localRepo: LocalCredentialRepository,
-    private val syncManager: SyncManager
+    private val vaultSyncManager: VaultSyncManager,
+    private val connectivityChecker: ConnectivityChecker
 ) : ViewModel() {
 
     val credentialId: String = checkNotNull(savedStateHandle["credentialId"])
@@ -38,6 +40,7 @@ class CredentialDetailViewModel @Inject constructor(
     private val _passwordVisible = MutableStateFlow(false)
     private val _isLoading       = MutableStateFlow(!isNew)
     private val _isSaving        = MutableStateFlow(false)
+    private val _errorMessage    = MutableStateFlow<String?>(null)
     private val _navEvent        = MutableSharedFlow<Unit>()
 
     val title:           StateFlow<String>  = _title.asStateFlow()
@@ -48,6 +51,7 @@ class CredentialDetailViewModel @Inject constructor(
     val passwordVisible: StateFlow<Boolean> = _passwordVisible.asStateFlow()
     val isLoading:       StateFlow<Boolean> = _isLoading.asStateFlow()
     val isSaving:        StateFlow<Boolean> = _isSaving.asStateFlow()
+    val errorMessage:    StateFlow<String?> = _errorMessage.asStateFlow()
     val navEvent:        SharedFlow<Unit>   = _navEvent
 
     val canSave: StateFlow<Boolean> = combine(_title, _username) { t, u ->
@@ -60,6 +64,8 @@ class CredentialDetailViewModel @Inject constructor(
     private var originalCreatedAt: Long = 0L
 
     init { if (!isNew) load() }
+
+    fun clearError() { _errorMessage.value = null }
 
     private fun load() = viewModelScope.launch {
         localRepo.getById(credentialId)?.let { c ->
@@ -86,47 +92,71 @@ class CredentialDetailViewModel @Inject constructor(
     }
 
     fun save() {
-        if (!canSave.value) return
+        if (!canSave.value || _isSaving.value) return
         viewModelScope.launch {
-            _isSaving.value = true
-            val now = System.currentTimeMillis()
-            val credential = if (isNew) {
-                Credential(
-                    title    = _title.value.trim(),
-                    username = _username.value.trim(),
-                    password = _password.value,
-                    url      = _url.value.trim(),
-                    notes    = _notes.value.trim(),
-                    createdAt = now,
-                    updatedAt = now
-                )
-            } else {
-                Credential(
-                    id       = credentialId,
-                    title    = _title.value.trim(),
-                    username = _username.value.trim(),
-                    password = _password.value,
-                    url      = _url.value.trim(),
-                    notes    = _notes.value.trim(),
-                    createdAt = originalCreatedAt,
-                    updatedAt = now
-                )
+            if (!connectivityChecker.isOnline()) {
+                _errorMessage.value = "No internet connection. Please try again."
+                return@launch
             }
-            localRepo.save(credential)
-            try { syncManager.pushNow() } catch (_: Exception) { /* credential is dirty; periodic sync will retry */ }
-            _navEvent.emit(Unit)
-            _isSaving.value = false
+            _isSaving.value = true
+            try {
+                // Pull latest vault from Drive, add our credential, upload back
+                val remote = vaultSyncManager.pullLatestCredentials()
+                val now = System.currentTimeMillis()
+                val credential = if (isNew) {
+                    Credential(
+                        title    = _title.value.trim(),
+                        username = _username.value.trim(),
+                        password = _password.value,
+                        url      = _url.value.trim(),
+                        notes    = _notes.value.trim(),
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                } else {
+                    Credential(
+                        id       = credentialId,
+                        title    = _title.value.trim(),
+                        username = _username.value.trim(),
+                        password = _password.value,
+                        url      = _url.value.trim(),
+                        notes    = _notes.value.trim(),
+                        createdAt = originalCreatedAt,
+                        updatedAt = now
+                    )
+                }
+                val merged = (remote.filter { it.id != credentialId } + credential)
+                vaultSyncManager.pushFullVault(merged)
+                localRepo.save(credential)
+                _navEvent.emit(Unit)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "Failed to save. Please try again."
+            } finally {
+                _isSaving.value = false
+            }
         }
     }
 
     fun delete() {
         if (isNew) return
         viewModelScope.launch {
+            if (!connectivityChecker.isOnline()) {
+                _errorMessage.value = "No internet connection. Please try again."
+                return@launch
+            }
             _isSaving.value = true
-            localRepo.delete(credentialId)
-            try { syncManager.pushNow() } catch (_: Exception) { /* periodic sync will retry */ }
-            _navEvent.emit(Unit)
-            _isSaving.value = false
+            try {
+                // Pull latest vault, remove credential, upload back
+                val remote = vaultSyncManager.pullLatestCredentials()
+                val reduced = remote.filter { it.id != credentialId }
+                vaultSyncManager.pushFullVault(reduced)
+                localRepo.delete(credentialId)
+                _navEvent.emit(Unit)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "Failed to delete. Please try again."
+            } finally {
+                _isSaving.value = false
+            }
         }
     }
 

@@ -11,7 +11,7 @@ class VaultSerializer @Inject constructor() {
 
     private val json = Json {
         ignoreUnknownKeys = true
-        encodeDefaults = true
+        encodeDefaults = false
     }
 
     fun serialize(credentials: List<Credential>): String =
