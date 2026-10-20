@@ -1,5 +1,6 @@
 package com.github.aashishvibhu.credentialmanagement.sync
 
+import android.util.Log
 import com.github.aashishvibhu.credentialmanagement.data.local.LocalCredentialRepository
 import com.github.aashishvibhu.credentialmanagement.data.vault.VaultSerializer
 import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
@@ -10,12 +11,18 @@ import io.mockk.coJustRun
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class VaultSyncManagerTest {
 
     private val localRepo       = mockk<LocalCredentialRepository>()
@@ -29,6 +36,9 @@ class VaultSyncManagerTest {
 
     @Before
     fun setUp() {
+        // android.util.Log isn't available on the JVM
+        mockkStatic(Log::class)
+        every { Log.e(any(), any(), any()) } returns 0
         vaultSyncManager = VaultSyncManager(localRepo, driveRepo, vaultCrypto, vaultSerializer)
     }
 
@@ -81,12 +91,19 @@ class VaultSyncManagerTest {
 
     @Test
     fun `concurrent pull is skipped`() = runTest {
-        coEvery { driveRepo.downloadVault() } returns null
+        val gate = CompletableDeferred<Unit>()
+        coEvery { driveRepo.downloadVault() } coAnswers { gate.await(); null }
 
-        vaultSyncManager.pullFromDrive()
-        assertEquals(SyncState.Success, vaultSyncManager.syncState.value)
+        // First pull suspends inside downloadVault, so the second one overlaps it
+        val first = launch { vaultSyncManager.pullFromDrive() }
+        runCurrent()
         vaultSyncManager.pullFromDrive()
         assertEquals(SyncState.Skipped, vaultSyncManager.syncState.value)
+
+        gate.complete(Unit)
+        first.join()
+        assertEquals(SyncState.Success, vaultSyncManager.syncState.value)
+        coVerify(exactly = 1) { driveRepo.downloadVault() }
     }
 
     // ── pushFullVault ─────────────────────────────────────────────────────────

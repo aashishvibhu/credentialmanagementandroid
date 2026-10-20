@@ -8,6 +8,7 @@ import com.github.aashishvibhu.credentialmanagement.util.ConnectivityChecker
 import io.mockk.coEvery
 import io.mockk.coJustRun
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -204,8 +205,6 @@ class CredentialDetailViewModelTest {
         val first = vm.password.value
         vm.generatePassword()
         assertNotEquals(first, vm.password.value)
-    }
-}
     }
 
     // ── passwordStrength ──────────────────────────────────────────────────────
