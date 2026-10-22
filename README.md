@@ -6,7 +6,7 @@ An Android app for securely storing and managing credentials, with end-to-end AE
 
 ## Features
 
-- **Encrypted vault** — Every credential is encrypted with AES-256-GCM via the Android Keystore before being written to disk or Drive
+- **Encrypted vault** — The vault in Drive is encrypted with AES-256-GCM under a key protected by your master password (Argon2id) and a recovery key, so it opens on any phone; the on-device cache is encrypted with an Android Keystore key
 - **Google Drive sync** — Credentials are stored as a single encrypted vault file in your Drive `appDataFolder` (private to the app, invisible in your Drive UI)
 - **Offline-first** — All reads and writes go to the local Room database first; Drive sync happens in the background
 - **Biometric lock** — Biometric or device-credential authentication required on every launch
@@ -129,7 +129,10 @@ Conflict resolution is **last-write-wins** by `updatedAt` timestamp.
 
 | Threat | Mitigation |
 |---|---|
-| Device lost / stolen | AES-256-GCM key in Android Keystore (hardware-backed on supported devices) |
+| Device lost / stolen | Vault key on the phone is wrapped by an Android Keystore key (hardware-backed on supported devices); unlocking needs biometrics or the master password |
+| Drive account compromised | Vault file is useless without the master password or recovery key; Argon2id makes guessing slow |
+| Reinstall / new phone | Sign in and enter the master password (or recovery key) to restore the vault |
+| Password guessing on the phone | 5 free tries, then a doubling wait (30 s up to 16 min) |
 | Drive storage access | `appDataFolder` scope — files are invisible to other apps and the Drive UI |
 | Screenshot / recents leak | `FLAG_SECURE` on the activity window |
 | Clipboard sniffing | Auto-clear after 30 seconds |

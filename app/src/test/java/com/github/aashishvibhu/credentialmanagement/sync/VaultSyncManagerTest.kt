@@ -2,16 +2,22 @@ package com.github.aashishvibhu.credentialmanagement.sync
 
 import android.util.Log
 import com.github.aashishvibhu.credentialmanagement.data.local.LocalCredentialRepository
+import com.github.aashishvibhu.credentialmanagement.data.vault.KdfParams
+import com.github.aashishvibhu.credentialmanagement.data.vault.VaultKeyStore
 import com.github.aashishvibhu.credentialmanagement.data.vault.VaultSerializer
 import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
 import com.github.aashishvibhu.credentialmanagement.domain.repository.DriveRepository
-import com.github.aashishvibhu.credentialmanagement.security.VaultCrypto
+import com.github.aashishvibhu.credentialmanagement.security.VaultCodec
+import com.github.aashishvibhu.credentialmanagement.security.VaultLockedException
+import com.github.aashishvibhu.credentialmanagement.security.VaultUnreadableException
 import io.mockk.coEvery
 import io.mockk.coJustRun
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
+import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -21,42 +27,48 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.security.SecureRandom
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VaultSyncManagerTest {
 
-    private val localRepo       = mockk<LocalCredentialRepository>()
-    private val driveRepo       = mockk<DriveRepository>()
-    private val vaultCrypto     = mockk<VaultCrypto>()
-    private val vaultSerializer = mockk<VaultSerializer>()
+    private val localRepo  = mockk<LocalCredentialRepository>()
+    private val driveRepo  = mockk<DriveRepository>()
+    private val keyStore   = mockk<VaultKeyStore>(relaxed = true)
+    private val serializer = VaultSerializer()
+    private val codec = VaultCodec(KdfParams("argon2id", 64, 1, 1), SecureRandom())
 
     private lateinit var vaultSyncManager: VaultSyncManager
 
     private val cred = Credential(id = "1", title = "T", username = "U", password = "P", updatedAt = 1000L, createdAt = 1000L)
+
+    // A vault in Drive holding [cred], and this phone's copy of its key
+    private val vault = codec.newVault(serializer.serialize(listOf(cred)), "master-password")
+    private val vaultText = codec.encode(vault.envelope)
 
     @Before
     fun setUp() {
         // android.util.Log isn't available on the JVM
         mockkStatic(Log::class)
         every { Log.e(any(), any(), any()) } returns 0
-        vaultSyncManager = VaultSyncManager(localRepo, driveRepo, vaultCrypto, vaultSerializer)
+        every { keyStore.vaultKey() } returns vault.vaultKey
+        every { keyStore.keyId() } returns vault.envelope.keyId
+        every { keyStore.envelope } returns vaultText
+        coJustRun { localRepo.refreshCache(any()) }
+        vaultSyncManager = VaultSyncManager(localRepo, driveRepo, codec, keyStore, serializer)
     }
 
     // ── pullFromDrive ─────────────────────────────────────────────────────────
 
     @Test
-    fun `pullFromDrive refreshes cache when vault exists`() = runTest {
-        coEvery { driveRepo.downloadVault() } returns "encrypted_vault"
-        every { vaultCrypto.decrypt("encrypted_vault") } returns "[decrypted]"
-        every { vaultSerializer.deserialize("[decrypted]") } returns listOf(cred)
-        coJustRun { localRepo.refreshCache(listOf(cred)) }
+    fun `pullFromDrive decrypts with the stored vault key and refreshes the cache`() = runTest {
+        coEvery { driveRepo.downloadVault() } returns vaultText
 
         vaultSyncManager.pullFromDrive()
 
-        coVerify { driveRepo.downloadVault() }
-        coVerify { vaultCrypto.decrypt("encrypted_vault") }
-        coVerify { vaultSerializer.deserialize("[decrypted]") }
         coVerify { localRepo.refreshCache(listOf(cred)) }
+        verify { keyStore.envelope = vaultText }
+        assertEquals(SyncState.Success, vaultSyncManager.syncState.value)
     }
 
     @Test
@@ -66,18 +78,39 @@ class VaultSyncManagerTest {
         vaultSyncManager.pullFromDrive()
 
         coVerify(exactly = 0) { localRepo.refreshCache(any()) }
+        assertEquals(SyncState.Success, vaultSyncManager.syncState.value)
     }
 
     @Test
-    fun `pullFromDrive state transitions to Success`() = runTest {
-        coEvery { driveRepo.downloadVault() } returns "enc"
-        every { vaultCrypto.decrypt("enc") } returns "[]"
-        every { vaultSerializer.deserialize("[]") } returns emptyList()
-        coJustRun { localRepo.refreshCache(any()) }
+    fun `pullFromDrive needs the master password when this phone has no key`() = runTest {
+        coEvery { driveRepo.downloadVault() } returns vaultText
+        every { keyStore.vaultKey() } returns null
 
-        vaultSyncManager.pullFromDrive()
+        val error = runCatching { vaultSyncManager.pullFromDrive() }.exceptionOrNull()
 
-        assertEquals(SyncState.Success, vaultSyncManager.syncState.value)
+        assertTrue(error is VaultLockedException)
+        val state = vaultSyncManager.syncState.value as SyncState.Error
+        assertTrue(state.message.contains("master password"))
+    }
+
+    @Test
+    fun `pullFromDrive forgets the key when another phone created a new vault`() = runTest {
+        val other = codec.newVault("[]", "someone-else")
+        coEvery { driveRepo.downloadVault() } returns codec.encode(other.envelope)
+
+        val error = runCatching { vaultSyncManager.pullFromDrive() }.exceptionOrNull()
+
+        assertTrue(error is VaultLockedException)
+        verify { keyStore.clearVaultKey() }
+    }
+
+    @Test
+    fun `pullFromDrive reports an old-format vault as unreadable`() = runTest {
+        coEvery { driveRepo.downloadVault() } returns "QUJDREVGR0g="
+
+        val error = runCatching { vaultSyncManager.pullFromDrive() }.exceptionOrNull()
+
+        assertTrue(error is VaultUnreadableException)
     }
 
     @Test
@@ -109,37 +142,40 @@ class VaultSyncManagerTest {
     // ── pushFullVault ─────────────────────────────────────────────────────────
 
     @Test
-    fun `pushFullVault serializes encrypts and uploads`() = runTest {
-        val credentials = listOf(cred)
-        every { vaultSerializer.serialize(credentials) } returns "[serialized]"
-        every { vaultCrypto.encrypt("[serialized]") } returns "encrypted"
-        coJustRun { driveRepo.uploadVault("encrypted") }
+    fun `pushFullVault re-encrypts under the same key and keeps the key slots`() = runTest {
+        val uploaded = slot<String>()
+        coJustRun { driveRepo.uploadVault(capture(uploaded)) }
+        val updated = listOf(cred, cred.copy(id = "2", title = "New"))
 
-        vaultSyncManager.pushFullVault(credentials)
+        vaultSyncManager.pushFullVault(updated)
 
-        coVerify { driveRepo.uploadVault("encrypted") }
+        val envelope = codec.decode(uploaded.captured)!!
+        assertEquals(vault.envelope.password, envelope.password)
+        assertEquals(vault.envelope.keyId, envelope.keyId)
+        assertEquals(updated, serializer.deserialize(codec.decryptPayload(envelope, vault.vaultKey)))
+        // Still opens with the master password after the push
+        codec.unlockWithPassword(envelope, "master-password")
+    }
+
+    @Test(expected = VaultLockedException::class)
+    fun `pushFullVault refuses without a vault key`() = runTest {
+        every { keyStore.vaultKey() } returns null
+        vaultSyncManager.pushFullVault(listOf(cred))
     }
 
     // ── pullLatestCredentials ─────────────────────────────────────────────────
 
     @Test
     fun `pullLatestCredentials returns decrypted list`() = runTest {
-        coEvery { driveRepo.downloadVault() } returns "enc"
-        every { vaultCrypto.decrypt("enc") } returns "[dec]"
-        every { vaultSerializer.deserialize("[dec]") } returns listOf(cred)
+        coEvery { driveRepo.downloadVault() } returns vaultText
 
-        val result = vaultSyncManager.pullLatestCredentials()
-
-        assertEquals(1, result.size)
-        assertEquals(cred, result[0])
+        assertEquals(listOf(cred), vaultSyncManager.pullLatestCredentials())
     }
 
     @Test
     fun `pullLatestCredentials returns empty list when no vault exists`() = runTest {
         coEvery { driveRepo.downloadVault() } returns null
 
-        val result = vaultSyncManager.pullLatestCredentials()
-
-        assertTrue(result.isEmpty())
+        assertTrue(vaultSyncManager.pullLatestCredentials().isEmpty())
     }
 }

@@ -6,18 +6,17 @@ import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -33,10 +32,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.github.aashishvibhu.credentialmanagement.ui.components.AppMark
 
 @Composable
 fun BiometricLockScreen(
     onAuthenticated: () -> Unit,
+    onUseMasterPassword: () -> Unit,
     viewModel: LockViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -53,9 +54,9 @@ fun BiometricLockScreen(
     val biometricManager = BiometricManager.from(context)
     val canAuthenticate = biometricManager.canAuthenticate(BIOMETRIC_WEAK or DEVICE_CREDENTIAL)
 
-    // Skip biometric if hardware not available (e.g. some emulators)
-    if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
-        LaunchedEffect(Unit) { authenticated() }
+    // No usable biometric/screen lock, or turned off in Settings: ask for the master password instead
+    if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS || !viewModel.biometricEnabled) {
+        LaunchedEffect(Unit) { onUseMasterPassword() }
         return
     }
 
@@ -80,8 +81,8 @@ fun BiometricLockScreen(
         }
 
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Unlock Credential Manager")
-            .setSubtitle("Authenticate to access your vault")
+            .setTitle("Unlock Vault")
+            .setSubtitle("Confirm it's you to see your passwords")
             .setAllowedAuthenticators(BIOMETRIC_WEAK or DEVICE_CREDENTIAL)
             .build()
 
@@ -95,26 +96,21 @@ fun BiometricLockScreen(
         onDispose { prompt?.cancelAuthentication() }
     }
 
-    Scaffold { padding ->
+    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(32.dp),
+                .padding(40.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = null,
-                modifier = Modifier.size(72.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.height(24.dp))
-            Text("Credential Manager", style = MaterialTheme.typography.headlineMedium)
+            AppMark()
+            Spacer(Modifier.height(20.dp))
+            Text("Vault is locked", style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Authentication required",
+                text = "Use your fingerprint, face or screen lock to open it.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -130,9 +126,17 @@ fun BiometricLockScreen(
             }
             if (showRetry) {
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = { showRetry = false; errorMessage = ""; launchPrompt() }) {
-                    Text("Try Again")
+                Button(
+                    onClick = { showRetry = false; errorMessage = ""; launchPrompt() },
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 28.dp, vertical = 14.dp)
+                ) {
+                    Text("Unlock")
                 }
+            }
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = { prompt?.cancelAuthentication(); onUseMasterPassword() }) {
+                Text("Use master password", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

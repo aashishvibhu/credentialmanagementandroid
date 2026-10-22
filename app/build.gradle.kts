@@ -106,6 +106,7 @@ dependencies {
     // Security
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.biometric)
+    implementation(libs.bouncycastle.prov)  // Argon2id for the master password
 
     // Coroutines & Serialization
     implementation(libs.kotlinx.coroutines.android)

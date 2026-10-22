@@ -12,6 +12,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -33,10 +34,18 @@ class CredentialDetailViewModelTest {
     private val connectivityChecker = mockk<ConnectivityChecker>()
     private val testDispatcher     = UnconfinedTestDispatcher()
 
+    // Already in the vault: two Google accounts and one GitHub
+    private val existing = listOf(
+        Credential(id = "g1", title = "Google", username = "a@gmail.com", password = "p"),
+        Credential(id = "g2", title = "google", username = "b@gmail.com", password = "p"),
+        Credential(id = "gh", title = "GitHub", username = "dev", password = "p")
+    )
+
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         every { connectivityChecker.isOnline() } returns true
+        every { localRepo.getAll() } returns flowOf(existing)
         coJustRun { localRepo.save(any()) }
         coJustRun { vaultSyncManager.pushFullVault(any()) }
     }
@@ -46,8 +55,8 @@ class CredentialDetailViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun newVm(id: String = "new") = CredentialDetailViewModel(
-        SavedStateHandle(mapOf("credentialId" to id)),
+    private fun newVm(id: String = "new", service: String? = null) = CredentialDetailViewModel(
+        SavedStateHandle(mapOf("credentialId" to id, "service" to service)),
         localRepo,
         vaultSyncManager,
         connectivityChecker
@@ -205,6 +214,34 @@ class CredentialDetailViewModelTest {
         val first = vm.password.value
         vm.generatePassword()
         assertNotEquals(first, vm.password.value)
+    }
+
+    // ── grouping helpers ──────────────────────────────────────────────────────
+
+    @Test
+    fun `service argument pre-fills the title for a new login`() {
+        val vm = newVm(service = "Google")
+        assertEquals("Google", vm.title.value)
+    }
+
+    @Test
+    fun `suggestions list existing services matching the input once each`() = runTest {
+        val vm = newVm()
+        val job = launch(Dispatchers.Main) { vm.serviceSuggestions.collect {} }
+        vm.onTitleChange("g")
+        assertEquals(listOf("GitHub", "Google"), vm.serviceSuggestions.value)
+        vm.onTitleChange("google")
+        assertEquals(emptyList<String>(), vm.serviceSuggestions.value)
+        job.cancel()
+    }
+
+    @Test
+    fun `sameServiceCount counts other logins with the same service`() = runTest {
+        val vm = newVm()
+        val job = launch(Dispatchers.Main) { vm.sameServiceCount.collect {} }
+        vm.onTitleChange(" GOOGLE ")
+        assertEquals(2, vm.sameServiceCount.value)
+        job.cancel()
     }
 
     // ── passwordStrength ──────────────────────────────────────────────────────
