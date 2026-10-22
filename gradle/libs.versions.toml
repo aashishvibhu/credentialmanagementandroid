@@ -22,6 +22,7 @@ googleHttpClientAndroid   = "1.44.2"
 googleAuthLibrary         = "1.28.0"
 securityCrypto            = "1.1.0-alpha06"
 biometric                 = "1.2.0-alpha05"
+bouncyCastle              = "1.78.1"
 coroutines                = "1.9.0"
 kotlinxSerialization      = "1.7.3"
 mockk                     = "1.13.12"
@@ -73,6 +74,7 @@ google-auth-library-oauth2-http = { group = "com.google.auth",       name = "goo
 # Security
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 androidx-biometric       = { group = "androidx.biometric", name = "biometric",       version.ref = "biometric" }
+bouncycastle-prov        = { group = "org.bouncycastle",  name = "bcprov-jdk18on",  version.ref = "bouncyCastle" }
 
 # Coroutines & Serialization
 kotlinx-coroutines-android       = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android",       version.ref = "coroutines" }

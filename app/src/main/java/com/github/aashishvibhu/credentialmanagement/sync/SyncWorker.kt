@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.github.aashishvibhu.credentialmanagement.security.VaultLockedException
+import com.github.aashishvibhu.credentialmanagement.security.VaultUnreadableException
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
@@ -25,6 +27,11 @@ class SyncWorker @AssistedInject constructor(
             Result.success()
         } catch (e: IllegalStateException) {
             // Not signed in — no point retrying until the user signs in
+            Result.failure()
+        } catch (e: VaultLockedException) {
+            // Needs the master password on this phone — retrying can't help
+            Result.failure()
+        } catch (e: VaultUnreadableException) {
             Result.failure()
         } catch (e: Exception) {
             // Transient error (network, etc.) — retry with backoff, up to 3 attempts

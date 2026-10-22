@@ -32,6 +32,10 @@
 -dontwarn com.google.common.**
 -dontwarn org.apache.http.**
 -dontwarn org.joda.time.**
+# Bouncy Castle: only the Argon2 generator is used; it references JCA/JNDI classes Android lacks
+-keep class org.bouncycastle.crypto.generators.Argon2BytesGenerator { *; }
+-keep class org.bouncycastle.crypto.params.Argon2Parameters** { *; }
+-dontwarn org.bouncycastle.**
 -keepclassmembers class * {
     @com.google.api.client.util.Key <fields>;
 }

@@ -2,6 +2,33 @@
 
 Generated: 2026-08-06 | Version: v1.1.0
 
+## Status (updated 2026-10-20)
+
+The Drive-first rewrite (`9e6f2aa`) resolved most of this audit. Details below are kept for history.
+
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | Deletion resurrection in merge | Resolved: merge removed, Drive is the single source of truth |
+| 2 | Infinite spinner when credential missing | Fixed |
+| 3 | Sign-out leaves remote vault | By design: the vault stays in Drive so signing in again restores it |
+| 4 | Clipboard clear race | Fixed |
+| 5 | Sign-in crash on non-`ApiException` | Fixed |
+| 6 | Experimental Base64 | Fixed (`java.util.Base64`) |
+| 7 | Backup includes Room DB | Fixed (DB excluded from backup and transfer) |
+| 8 | KeyStore loaded every operation | Fixed (key cached) |
+| 9 | Concurrent sync ignored | Obsolete (`SyncManager` removed) |
+| 10 | `signedInEmail` not observable | Fixed (`StateFlow`) |
+| 11 | No Keystore error handling | Open |
+| 12 | Double snapshot read in sync | Obsolete (`SyncManager` removed) |
+| 13 | No connectivity check before push | Fixed (`ConnectivityChecker`) |
+| 14 | Hardcoded UI strings | Open |
+| 15 | No Room migration strategy | Mitigated: destructive migration, DB is a disposable cache |
+| 16 | Biometric silent failure | Open |
+| 17 | Search has no debounce | Open |
+| 18 | Biometric prompt not cancelled | Fixed |
+| 19 | Save progress indicator sizing | Open, replaced by the UI redesign (see `ROADMAP.md`) |
+| 20 | Serializer encodes defaults | Fixed (`encodeDefaults = false`) |
+
 ---
 
 ## 🔴 Critical

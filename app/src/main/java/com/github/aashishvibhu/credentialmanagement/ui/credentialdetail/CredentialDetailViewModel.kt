@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.github.aashishvibhu.credentialmanagement.data.local.LocalCredentialRepository
 import com.github.aashishvibhu.credentialmanagement.domain.model.Credential
 import com.github.aashishvibhu.credentialmanagement.sync.VaultSyncManager
+import com.github.aashishvibhu.credentialmanagement.ui.credentiallist.serviceKey
 import com.github.aashishvibhu.credentialmanagement.util.ConnectivityChecker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -18,6 +19,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.github.aashishvibhu.credentialmanagement.util.passwordStrength as strengthOf
+import com.github.aashishvibhu.credentialmanagement.util.userMessage
 import javax.inject.Inject
 
 @HiltViewModel
@@ -31,7 +34,8 @@ class CredentialDetailViewModel @Inject constructor(
     val credentialId: String = checkNotNull(savedStateHandle["credentialId"])
     val isNew: Boolean = credentialId == "new"
 
-    private val _title    = MutableStateFlow("")
+    // "Add another account" from a group row pre-fills the service name
+    private val _title    = MutableStateFlow(if (isNew) savedStateHandle.get<String>("service").orEmpty() else "")
     private val _username = MutableStateFlow("")
     private val _password = MutableStateFlow("")
     private val _url      = MutableStateFlow("")
@@ -58,8 +62,26 @@ class CredentialDetailViewModel @Inject constructor(
         t.isNotBlank() && u.isNotBlank()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    val passwordStrength: StateFlow<Float> = _password.map { computeStrength(it) }
+    val passwordStrength: StateFlow<Float> = _password.map { strengthOf(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0f)
+
+    private val otherCredentials = localRepo.getAll().map { list -> list.filter { it.id != credentialId } }
+
+    /** Existing service names matching what's typed, so a new login can join an existing group. */
+    val serviceSuggestions: StateFlow<List<String>> = combine(otherCredentials, _title) { list, typed ->
+        val typedKey = serviceKey(typed)
+        list.map { it.title.trim() }
+            .distinctBy { serviceKey(it) }
+            .filter { serviceKey(it) != typedKey && serviceKey(it).contains(typedKey) }
+            .sortedBy { it.lowercase() }
+            .take(6)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** How many other logins share this service name, i.e. the group this login will sit in. */
+    val sameServiceCount: StateFlow<Int> = combine(otherCredentials, _title) { list, typed ->
+        val typedKey = serviceKey(typed)
+        if (typedKey.isEmpty()) 0 else list.count { serviceKey(it.title) == typedKey }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     private var originalCreatedAt: Long = 0L
 
@@ -130,7 +152,7 @@ class CredentialDetailViewModel @Inject constructor(
                 localRepo.save(credential)
                 _navEvent.emit(Unit)
             } catch (e: Exception) {
-                _errorMessage.value = e.message ?: "Failed to save. Please try again."
+                _errorMessage.value = e.userMessage("Couldn't save")
             } finally {
                 _isSaving.value = false
             }
@@ -153,22 +175,10 @@ class CredentialDetailViewModel @Inject constructor(
                 localRepo.delete(credentialId)
                 _navEvent.emit(Unit)
             } catch (e: Exception) {
-                _errorMessage.value = e.message ?: "Failed to delete. Please try again."
+                _errorMessage.value = e.userMessage("Couldn't delete")
             } finally {
                 _isSaving.value = false
             }
         }
-    }
-
-    private fun computeStrength(p: String): Float {
-        if (p.isEmpty()) return 0f
-        var s = 0
-        if (p.length >= 8) s++
-        if (p.length >= 12) s++
-        if (p.any { it.isUpperCase() }) s++
-        if (p.any { it.isLowerCase() }) s++
-        if (p.any { it.isDigit() }) s++
-        if (p.any { "!@#\$%^&*()_+-=[]{}|;':\",./<>?".contains(it) }) s++
-        return s / 6f
     }
 }
